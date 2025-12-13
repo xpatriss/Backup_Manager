@@ -297,12 +297,16 @@ void copy(char* s_root, char* t_root, char* source, char* target, file** content
                         if(mkdir(new_dir, 0777))
                         {
                             perror("mkdir failed");
+                            free(dir_content);  
+                            free(new_dir);
                             return;
                         }
                     }
                     else
                     {
                         perror("opendir failed");
+                        free(dir_content);  
+                        free(new_dir);
                         return;
                     }
                 }
@@ -312,6 +316,26 @@ void copy(char* s_root, char* t_root, char* source, char* target, file** content
                     if (target_content[0] != NULL)
                     {
                         fprintf(stderr, "\nTarget directory in not empty!\n");
+
+                        int j = 0;
+                        while (target_content[j] != NULL)
+                        {
+                            free(target_content[j]->name);
+                            free(target_content[j]->real_path);
+                            free(target_content[j]);
+                            j++;
+                        }
+                        free(target_content);
+
+                        if (closedir(dirp)) 
+                        {
+                            perror("closedir failed");
+                            free(dir_content);  
+                            free(new_dir);
+                            return;
+                        }
+                        free(dir_content);  
+                        free(new_dir);
                         return;
                     }
                     int j = 0;
@@ -324,11 +348,7 @@ void copy(char* s_root, char* t_root, char* source, char* target, file** content
                         }
                         free(target_content);
         
-                    if (closedir(dirp)) 
-                    {
-                        perror("closedir failed");
-                        return;
-                    }
+                    
 
                 }
                 copy(s_root, t_root, content[i]->real_path, new_dir, dir_content);
@@ -341,7 +361,7 @@ void copy(char* s_root, char* t_root, char* source, char* target, file** content
                     j++;
                 }
                 free(dir_content);  
-                free(new_dir)   ;
+                free(new_dir);
                 break;
             case(SYMLINK_TYPE):
                 copy_symlink(s_root, t_root, source, target, content[i]);
@@ -386,10 +406,8 @@ void add_action(char* source, char* target)
         file** target_content = scan_dir(target);
         if (target_content[0] != NULL)
         {
-            fprintf(stderr, "\nTarget directory in not empty!\n");
-            return;
-        }
-        int j = 0;
+            fprintf(stderr, ANSI_COLOR_RED "\nTarget directory in not empty!\n" ANSI_COLOR_RESET);
+            int j = 0;
             while (target_content[j] != NULL)
             {
                 free(target_content[j]->name);
@@ -398,14 +416,33 @@ void add_action(char* source, char* target)
                 j++;
             }
             free(target_content);
-        
-        if (closedir(dirp)) 
-        {
-            perror("closedir failed");
+            if (closedir(dirp)) 
+            {
+                perror("closedir failed");
+                return;
+            }
             return;
         }
+    
+            int j = 0;
+            while (target_content[j] != NULL)
+            {
+                free(target_content[j]->name);
+                free(target_content[j]->real_path);
+                free(target_content[j]);
+                j++;
+            }
+            free(target_content); 
+
+            if (closedir(dirp)) 
+            {
+                perror("closedir failed");
+                return;
+            }
+        
 
     }
+
     file** content = scan_dir(source);
     
     copy(source, target, source, target, content);         // kopiuje elementy do katalogu docelowego

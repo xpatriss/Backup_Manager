@@ -16,8 +16,20 @@
 #include <unistd.h> 
 #include <ftw.h> 
 
+// Definicje kolorów ANSI
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_YELLOW  "\x1b[33m"
+#define ANSI_COLOR_BLUE    "\x1b[34m"
+#define ANSI_COLOR_MAGENTA "\x1b[35m"
+#define ANSI_COLOR_CYAN    "\x1b[36m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
+
+// Style
+#define ANSI_BOLD          "\x1b[1m"
+
 #define MAX_ARG 10
-#define MAX_SIZE 1000
+#define MAX_SIZE 4096
 #define MAX_PATH 4096
 #define ERR(source) (perror(source), fprintf(stderr, "%s:%d\n", __FILE__, __LINE__), kill(0, SIGKILL), exit(EXIT_FAILURE))
 

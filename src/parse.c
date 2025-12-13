@@ -90,12 +90,12 @@ int parse(char* input, char** argv)
         char* target = realpath(argv[2], NULL);
         if ((source == NULL) && (errno == ENOENT))
         {
-            fprintf(stderr, "\nThe source directory doesn't exist!\n");
+            fprintf(stderr, ANSI_COLOR_RED "\nThe source directory doesn't exist!\n" ANSI_COLOR_RESET);
             return 0;
         }
         else if (source == NULL)
         {
-            fprintf(stderr, "\n Source path is incorrect!\n");
+            fprintf(stderr, ANSI_COLOR_RED "\n Source path is incorrect!\n" ANSI_COLOR_RESET);
             return 0;
         }
         if ((target == NULL) && (errno == ENOENT))
@@ -109,7 +109,7 @@ int parse(char* input, char** argv)
         }
         else if (target == NULL)
         {
-            fprintf(stderr, "\n Target path is incorrect!\n");
+            fprintf(stderr, ANSI_COLOR_RED "\n Target path is incorrect!\n" ANSI_COLOR_RESET);
             return 0;
         }
         free(argv[1]);
@@ -158,7 +158,7 @@ int parse(char* input, char** argv)
     }
     else
     {
-        printf("\nUnrecognizable instruction!\n");
+        printf(ANSI_COLOR_RED "\nUnrecognizable instruction!\n" ANSI_COLOR_RESET);
         return 0;
     }
     
