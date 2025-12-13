@@ -7,6 +7,7 @@ int main(int argc, char** argv)
     if (argc != 1)
     {
         usage(argv[0], NULL);
+        exit(EXIT_FAILURE);
     }
 
     printf("\nHello! Welcome to the Backup Manager. You can use one of the commands:\n");
@@ -15,26 +16,32 @@ int main(int argc, char** argv)
     printf("restore <source path> <target path>  -  restore a copy of <source path> from a <target path>\n");
     printf("list  -  shows a summary which coontains folders which have a backup and their location\n");
     printf("exit  -  stops running the program\n");
+        
+        size_t len = 0;
+        char* input = NULL;
 
-    printf("\nI'm waiting for your command...\n");
+        while(1)
+        {
+            printf("\nI'm waiting for your command...\n");
+            if (getline(&input, &len, stdin) == -1) {
+                break; // Wyjście z pętli przy Ctrl+D
+            }
 
+            // Pomijamy puste linie (sam Enter)
+            if (strcmp(input, "\n") == 0) {
+                continue;
+            }
 
-    char* input = NULL;
-    size_t len;
+            char* instr_argv[MAX_ARG];
+            int instr_argc = parse(input, instr_argv);
+            printf("\nRESULT: argc = %d \ninstruction = %s \nsource = %s \ntarget = %s \n", instr_argc, instr_argv[0], instr_argv[1], instr_argv[2]);
 
-    getline(&input, &len, stdin);
+            for (int i = 0; i < instr_argc; i++)
+            {
+                free(instr_argv[i]);
+            }
+        }
     
-    char* instr_argv[MAX_ARG];
-
-    int instr_argc = parse(input, instr_argv);
-
-    printf("\nRESULT: argc = %d \ninstruction = %s \nsource = %s \ntarget = %s \n", instr_argc, instr_argv[0], instr_argv[1], instr_argv[2]);
-
     free(input);
-    for (int i = 0; i < instr_argc; i++)
-    {
-        free(instr_argv[i]);
-    }
-
     return 0;
 }

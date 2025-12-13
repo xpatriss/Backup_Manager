@@ -83,7 +83,40 @@ int parse(char* input, char** argv)
         if (argc < 3)
         {
             usage(argv[0], "<source path> <target path 1> <target path 2> ...");
+            return 0;
         }
+        errno = 0;
+        char* source = realpath(argv[1], NULL);
+        char* target = realpath(argv[2], NULL);
+        if ((source == NULL) && (errno == ENOENT))
+        {
+            fprintf(stderr, "\nThe source directory doesn't exist!\n");
+            return 0;
+        }
+        else if (source == NULL)
+        {
+            fprintf(stderr, "\n Source path is incorrect!\n");
+            return 0;
+        }
+        if ((target == NULL) && (errno == ENOENT))
+        {
+            if(mkdir(argv[2], 0777))
+            {
+                perror("mkdir failed");
+                return 0;
+            }
+            target = realpath(argv[2], NULL);
+        }
+        else if (target == NULL)
+        {
+            fprintf(stderr, "\n Target path is incorrect!\n");
+            return 0;
+        }
+        free(argv[1]);
+        argv[1] = source;
+        free(argv[2]);
+        argv[2] = target;
+        
         add_action(argv[1], argv[2]);
 
     }
@@ -93,6 +126,7 @@ int parse(char* input, char** argv)
         if (argc < 3)
         {
             usage(argv[0], "<source path> <target path 1> <target path 2> ...");
+            return 0;
         }
     }
     else if (restore == 0)
@@ -101,6 +135,7 @@ int parse(char* input, char** argv)
         if (argc != 3)
         {
             usage(argv[0], "<source path> <target path>");
+            return 0;
         }
     }
     else if (exit == 0)
@@ -109,6 +144,7 @@ int parse(char* input, char** argv)
         if (argc != 1)
         {
             usage(argv[0], NULL);
+            return 0;
         }
     }
     else if (list == 0)
@@ -117,11 +153,13 @@ int parse(char* input, char** argv)
         if (argc != 1)
         {
             usage(argv[0], NULL);
+            return 0;
         }
     }
     else
     {
         printf("\nUnrecognizable instruction!\n");
+        return 0;
     }
     
     return argc;

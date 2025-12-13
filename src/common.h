@@ -18,7 +18,15 @@
 
 #define MAX_ARG 10
 #define MAX_SIZE 1000
+#define MAX_PATH 4096
 #define ERR(source) (perror(source), fprintf(stderr, "%s:%d\n", __FILE__, __LINE__), kill(0, SIGKILL), exit(EXIT_FAILURE))
+
+enum types
+{
+    FILE_TYPE,       // 0
+    DIRECTORY_TYPE,  // 1
+    SYMLINK_TYPE     // 2
+};
 
 typedef struct
 {
@@ -26,6 +34,15 @@ typedef struct
     ssize_t sizes[MAX_SIZE];
     int count;
 } elements;
+
+typedef struct 
+{
+    char* name;//[MAX_SIZE];
+    char* real_path;//[MAX_SIZE];
+    //ssize_t size;
+    mode_t perms;
+    enum types type;
+} file;
 
 void usage(char* pname, char* args);
 char* join_path(char *dir, char *name);

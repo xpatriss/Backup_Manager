@@ -41,67 +41,99 @@ ssize_t bulk_write(int fd, char *buf, size_t count)
     return len;
 }
 
-// przegląda katalog o podanej ścieżce, zapisuje nazwy elementów i ich rozmiary w tablicy
-elements* scan_dir(char* path, elements result[3])
+file** scan_dir(char* path)
 {
     DIR *dirp;  //wskaznik na strumień katalogu otwarty przez opendir()
     struct dirent *dp;  //zawiera inode i nazwe jednego elementu katalogu
     struct stat filestat;   //zawiera informacje o pliku (rozmiar, typ, dostęp)
-     // Bufor na pełną ścieżkę
 
-    int files_count = 0, dirs_count = 0, links_count = 0;
+    file** tab = NULL;
+    int content_count = 0;
 
-    elements* files = &result[0];
-    elements* dirs = &result[1];
-    elements* links = &result[2];
-
-    /*
-    char *files_names[MAX_SIZE];
-    ssize_t files_sizes[MAX_SIZE];
-
-    char *dirs_names[MAX_SIZE];
-    ssize_t dirs_sizes[MAX_SIZE];
-
-    char *links_names[MAX_SIZE];
-    ssize_t links_sizes[MAX_SIZE];
-    */
-
-    if ((dirp = opendir(path)) == NULL)  //próba otwarcia katalogu
+    if ((dirp = opendir(path)) == NULL)  
     {
-        ERR("opendir");
+        perror("opendir failed");
+        return NULL;
     }
     
     do
     {
-        errno = 0;  //zerujemy żeby móc wykryć błąd readdir, jesli jakas funkcja systemowa zwroci blad zmienia wartosc errno
-        if ((dp = readdir(dirp)) != NULL)   //odczytuje kolejny element katalogu
+        errno = 0;  
+        if ((dp = readdir(dirp)) != NULL)
         {
-            // Pomijamy . i ..
+            
             if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
                 continue;
 
             char* full_path = join_path(path, dp->d_name);
 
-            if (lstat(full_path, &filestat))   //sukces->0, błąd->-1
-                ERR("lstat");
-            // sprawdzanie typu elementu
+            if (lstat(full_path, &filestat)) 
+            {
+                free(full_path);
+                perror("lstat failed");
+                return NULL;
+            }  
+                
+            
             if (S_ISDIR(filestat.st_mode))
             {
-                dirs->names[dirs_count] = strdup(dp->d_name);
-                dirs->sizes[dirs_count] = filestat.st_size;
-                dirs_count++;
+                ssize_t new_size = (content_count + 2) * sizeof(file*);
+                file** temp = realloc(tab, new_size);
+
+                if (temp == NULL) {
+                    ERR("realloc");
+                }
+
+                tab = temp;
+            
+
+                tab[content_count] = malloc(sizeof(file));
+                tab[content_count]->name = strdup(dp->d_name);
+                tab[content_count]->real_path = strdup(full_path);
+                tab[content_count]->perms = filestat.st_mode & 0777;
+                tab[content_count]->type = DIRECTORY_TYPE;
+                
+                content_count++;
             }
             else if (S_ISREG(filestat.st_mode))
             {
-                files->names[files_count] = strdup(dp->d_name);
-                files->sizes[files_count] = filestat.st_size;
-                files_count++;
+                ssize_t new_size = (content_count + 2) * sizeof(file*);
+                file** temp = realloc(tab, new_size);
+
+                if (temp == NULL) {
+                    ERR("realloc");
+                }
+
+                tab = temp;
+            
+
+                tab[content_count] = malloc(sizeof(file));
+                tab[content_count]->name = strdup(dp->d_name);
+                tab[content_count]->real_path = strdup(full_path);
+                tab[content_count]->perms = filestat.st_mode & 0777;
+                tab[content_count]->type = FILE_TYPE;
+                
+                content_count++;
             }
             else if (S_ISLNK(filestat.st_mode))
             {        
-                links->names[links_count] = strdup(dp->d_name);
-                links->sizes[links_count] = filestat.st_size;
-                links_count++;
+                ssize_t new_size = (content_count + 2) * sizeof(file*);
+                file** temp = realloc(tab, new_size);
+
+                if (temp == NULL) {
+                    ERR("realloc");
+                }
+
+                tab = temp;
+            
+
+                tab[content_count] = malloc(sizeof(file));
+                tab[content_count]->name = strdup(dp->d_name);
+                tab[content_count]->real_path = strdup(full_path);
+                tab[content_count]->perms = filestat.st_mode & 0777;
+                tab[content_count]->type = SYMLINK_TYPE;
+                
+                content_count++;
             }
             else
             {    
@@ -110,103 +142,282 @@ elements* scan_dir(char* path, elements result[3])
             free(full_path);
         }
         
-    } while (dp != NULL);    //pętla aż readdir zwróci NULL (koniec katalogu), errno=0 jeśli wszystko się powiodło
+    } while (dp != NULL);   
 
-    if (errno != 0)     //jesli readdir zwrócił NULL ale errno != 0 -> wystąpił błąd
-        ERR("readdir");
-    if (closedir(dirp)) //próba zamknięcia katalogu
-        ERR("closedir");
-
-    files->count = files_count;
-    dirs->count = dirs_count;
-    links->count = links_count;
-    return result;
-
-    /*
-    for (int i = 0; i < files; i++)
+    if (errno != 0)
     {
-        free(files_names[i]);
-        free(files_sizes[i]);
-    }
-    for (int i = 0; i < dirs; i++)
-    {
-        free(dirs_names[i]);
-        free(dirs_sizes[i]);
-    }
-    for (int i = 0; i < linkss; i++)
-    {
-        free(links_names[i]);
-        free(links_sizes[i]);
-    }
-    */
-
+        perror("readdir failed");
+        return NULL;
+    }    
         
+    if (closedir(dirp)) 
+    {
+        perror("closedir failed");
+        return NULL;
+    }
+        
+
+    if (content_count == 0)
+    {
+        ssize_t new_size = (content_count + 1) * sizeof(file*);
+                file** temp = realloc(tab, new_size);
+
+                if (temp == NULL) {
+                    ERR("realloc");
+                }
+
+                tab = temp;
+                
+    }
+    tab[content_count] = NULL;
+               
+    return tab;
+   
 }
 
-void copy(char* source, char* target, elements content[3])
-{
-    // files - content[0]
-    int files_count = content[0].count;
-    for(int i = 0; i < files_count; i++)
-    {
-        int fd1, fd2;
-        ssize_t n = content[0].sizes[i];
-        char buf[4096];
-        char* name = strdup(content[0].names[i]);
-        char* source_name = join_path(source, name);
-        char* target_name = join_path(target, name);
 
+void copy_file(char* target, file* f)
+{
+    int fd1, fd2;
+    char buf[4096];
+    char* source_path = strdup(f->real_path);
+    char* target_path = join_path(target,f->name);
     
-        if ((fd1 = TEMP_FAILURE_RETRY(open(source_name, O_RDONLY))) < 0)
+    
+        if ((fd1 = TEMP_FAILURE_RETRY(open(source_path, O_RDONLY))) < 0)
         {
-            ERR("open");
+            perror("open file failed");
+            return;
         }
-        if ((fd2 = TEMP_FAILURE_RETRY(open(target_name, O_WRONLY | O_CREAT | O_APPEND | O_TRUNC, 0777))) < 0)
+        if ((fd2 = TEMP_FAILURE_RETRY(open(target_path, O_WRONLY | O_CREAT | O_APPEND | O_TRUNC, f->perms))) < 0)
         {
-            ERR("open");
+            perror("open file failed");
+            return;
         }
+
         int count = 0;
         ssize_t bytes_read;
         while((bytes_read = bulk_read(fd1, buf, sizeof(buf))) > 0)
         {
             if ((count = bulk_write(fd2, buf, bytes_read)) < 0)
-                ERR("write");
+            {
+                perror("write to file failed");
+                return;
+            }
+                
         }
-
         if (bytes_read < 0) 
-            ERR("read");
+        {
+            perror("read a file failed");
+            return;
+        }
 
 
         if (TEMP_FAILURE_RETRY(close(fd1)))
-            ERR("close");
+        {
+            perror("close a file failed");
+            return;
+        }
+        
 
         if (TEMP_FAILURE_RETRY(close(fd2)))
-            ERR("close");
+        {
+            perror("close a file failed");
+            return;
+        }
+            
 
-        free(source_name);
-        free(target_name);
-        free(name);
+        free(source_path);
+        free(target_path);
 
+}
+
+void copy_symlink(char* s_root, char* t_root, char* source, char* target, file* s)
+{
+    char link_content[MAX_PATH];
+    ssize_t len;
+
+    len = readlink(s->real_path, link_content, sizeof(link_content) - 1);
+    
+    
+    if (len == -1) {
+        perror("readlink");
+        return;
     }
 
-    // dirs - content[1]
+    link_content[len] = '\0';
+    char* new_content = strdup(link_content);   // sciezka do pliku
+    char* new_name = join_path(target, s->name);   // nazwa symlinku
 
-    // links - content[2]
+    ssize_t source_len = strlen(s_root);
+    if (strncmp(link_content, s_root, source_len) == 0)
+    {
+        char* file_name = link_content + source_len + 1; // nazwa wskazywanego pliku
+        char* modified = join_path(t_root, file_name);  // nowa zawarosc symlnika
+        free(new_content);
+        new_content = strdup(modified);
+         
+        free(modified);
+    }
+    
+    unlink(new_name);
+
+    if (symlink(new_content, new_name) == -1) 
+    {
+        perror("creating a symlink failed");
+        return;
+    }
+
+    free(new_name);
+    free(new_content);
+
+
 }
+
+void copy(char* s_root, char* t_root, char* source, char* target, file** content)
+{
+    if (content == NULL) return;
+    int i = 0;
+    while (content[i] != NULL)
+    {
+        switch(content[i]->type)
+        {
+            case(FILE_TYPE):
+                copy_file(target, content[i]);
+                break;
+            case(DIRECTORY_TYPE):
+                file** dir_content = scan_dir(content[i]->real_path);
+                char* new_dir = join_path(target, content[i]->name);
+                errno = 0;
+                DIR* dirp;
+                if ((dirp = opendir(new_dir)) == NULL)  
+                {
+                    if (errno == ENOENT)
+                    {
+                        if(mkdir(new_dir, 0777))
+                        {
+                            perror("mkdir failed");
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        perror("opendir failed");
+                        return;
+                    }
+                }
+                else
+                {
+                    file** target_content = scan_dir(target);
+                    if (target_content[0] != NULL)
+                    {
+                        fprintf(stderr, "\nTarget directory in not empty!\n");
+                        return;
+                    }
+                    int j = 0;
+                        while (target_content[j] != NULL)
+                        {
+                            free(target_content[j]->name);
+                            free(target_content[j]->real_path);
+                            free(target_content[j]);
+                            j++;
+                        }
+                        free(target_content);
+        
+                    if (closedir(dirp)) 
+                    {
+                        perror("closedir failed");
+                        return;
+                    }
+
+                }
+                copy(s_root, t_root, content[i]->real_path, new_dir, dir_content);
+                int j = 0;
+                while (dir_content[j] != NULL)
+                {
+                    free(dir_content[j]->name);
+                    free(dir_content[j]->real_path);
+                    free(dir_content[j]);
+                    j++;
+                }
+                free(dir_content);  
+                free(new_dir)   ;
+                break;
+            case(SYMLINK_TYPE):
+                copy_symlink(s_root, t_root, source, target, content[i]);
+                break;
+            default:
+                continue;
+        }
+        i++;
+    }
+    
+}
+
 
 void add_action(char* source, char* target)
 {
-    elements content[3];             // tablica struktur elementów
-    scan_dir(source, content);      // skanuje zawartość katalogu źródłowego
-    int status = mkdir(target, 0777);
-    copy(source, target, content);         // kopiuje elementy do katalogu docelowego
-
-    for(int i = 0; i < 3; i++)
+    
+    /*if (content == NULL)
     {
-        for(int j = 0; j < content[i].count; j++)
+        fprintf(stderr, "\nEmpty directory!\n");
+        return;
+    }*/
+    errno = 0;
+    DIR* dirp;
+    if ((dirp = opendir(target)) == NULL)  
+    {
+        if (errno == ENOENT)
         {
-            free(content[i].names[j]);
-            //free(content[i].sizes[j]);
+            if(mkdir(target, 0777))
+            {
+                perror("mkdir failed");
+                return;
+            }
+        }
+        else
+        {
+            perror("opendir failed");
+            return;
         }
     }
+    else
+    {
+        file** target_content = scan_dir(target);
+        if (target_content[0] != NULL)
+        {
+            fprintf(stderr, "\nTarget directory in not empty!\n");
+            return;
+        }
+        int j = 0;
+            while (target_content[j] != NULL)
+            {
+                free(target_content[j]->name);
+                free(target_content[j]->real_path);
+                free(target_content[j]);
+                j++;
+            }
+            free(target_content);
+        
+        if (closedir(dirp)) 
+        {
+            perror("closedir failed");
+            return;
+        }
+
+    }
+    file** content = scan_dir(source);
+    
+    copy(source, target, source, target, content);         // kopiuje elementy do katalogu docelowego
+
+    int i = 0;
+    while (content[i] != NULL)
+    {
+        free(content[i]->name);
+        free(content[i]->real_path);
+        free(content[i]);
+        i++;
+    }
+    free(content);
+    
 }

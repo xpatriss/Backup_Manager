@@ -3,7 +3,7 @@
 void usage(char* pname, char* args)
 {
     fprintf(stderr, "USAGE: %s %s\n", pname, args);
-    exit(EXIT_FAILURE);
+    //exit(EXIT_FAILURE);
 }
 
 char* join_path(char *dir, char *name) {
