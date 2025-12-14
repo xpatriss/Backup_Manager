@@ -9,6 +9,65 @@ void exit_handler(int sig)
     app_running = 0;
 }
 
+void making_realpaths(int instr_argc, char** instr_argv)
+{
+    errno = 0;
+            char* source = realpath(instr_argv[1], NULL);
+            if ((source == NULL) && (errno == ENOENT))
+            {
+                fprintf(stderr, ANSI_COLOR_RED "\nThe source directory doesn't exist!\n" ANSI_COLOR_RESET);
+                free(source);
+                return;
+            }
+            else if (source == NULL)
+            {
+                perror("realpath failed");
+                free(source);
+                return;
+            }
+
+            char* targets[instr_argc - 2]; 
+            for (int i = 0; i < (instr_argc - 2); i++)
+            {
+                errno = 0;
+                targets[i] = realpath(instr_argv[i + 2], NULL);
+                if ((targets[i] == NULL) && (errno == ENOENT))
+                {
+                    if (mkdir(instr_argv[i + 2], 0777))
+                    {
+                        perror("mkdir failed");
+                        for (int j = 0; j < (instr_argc - 2); j++)
+                        {
+                            if (targets[j] != NULL) {
+                                free(targets[j]);
+                            }
+                        }
+                        return;
+                    }
+                    targets[i] = realpath(instr_argv[i + 2], NULL);
+                }
+                else if (targets[i] == NULL)
+                {
+                    perror("realpath failed");
+                    for (int j = 0; j < (instr_argc - 2); j++)
+                    {
+                        if (targets[j] != NULL) {
+                            free(targets[j]);
+                        }
+                    }
+                    return;
+                }
+            }
+
+            free(instr_argv[1]);
+            instr_argv[1] = source;
+            for (int i = 2; i < instr_argc; i++)
+            {
+                free(instr_argv[i]);
+                instr_argv[i] = targets[i - 2];
+            }
+}
+
 void get_instruction(int instr_argc, char** instr_argv)
 {
         int add = strcmp(instr_argv[0], "add");
@@ -25,38 +84,22 @@ void get_instruction(int instr_argc, char** instr_argv)
                 return;
             }
 
-            errno = 0;
-            char* source = realpath(instr_argv[1], NULL);
-            char* target = realpath(instr_argv[2], NULL);
-            if ((source == NULL) && (errno == ENOENT))
-            {
-                fprintf(stderr, ANSI_COLOR_RED "\nThe source directory doesn't exist!\n" ANSI_COLOR_RESET);
-                return;
-            }
-            else if (source == NULL)
-            {
-                perror("realpath failed");
-                return;
-            }
-            if ((target == NULL) && (errno == ENOENT))
-            {
-                if (mkdir(instr_argv[2], 0777))
-                {
-                    perror("mkdir failed");
-                    return;
-                }
-                target = realpath(instr_argv[2], NULL);
-            }
-            else if (target == NULL)
-            {
-                perror("realpath failed");
-                return;
-            }
-            free(instr_argv[1]);
-            instr_argv[1] = source;
-            free(instr_argv[2]);
-            instr_argv[2] = target;
+            making_realpaths(instr_argc, instr_argv);
+            char* source = instr_argv[1];
+            size_t src_len = strlen(source);
 
+            for (int i = 2; i < instr_argc; i++)
+            {
+                char* target = instr_argv[i];
+                if(strncmp(source, target, src_len) == 0)
+                {
+                    if (target[src_len] == '/' || target[src_len] == '\0')
+                    {
+                        fprintf(stderr, ANSI_COLOR_RED "\nTarget '%s' is inside source '%s'!\n" ANSI_COLOR_RESET, target, source);
+                        return;
+                    }
+                }
+            }
             add_action(instr_argv[1], instr_argv[2]);
         }
         else if (end == 0)
@@ -165,6 +208,9 @@ int main(int argc, char** argv)
         memset(instr_argv, 0, sizeof(instr_argv));
 
         instr_argc = parse(input, instr_argv);
+
+        
+        
 
         if (instr_argc != 0)
         {

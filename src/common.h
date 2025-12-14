@@ -16,6 +16,7 @@
 #include <sys/stat.h>  
 #include <unistd.h> 
 #include <ftw.h> 
+#include <ctype.h>
 
 // Definicje kolorów ANSI
 #define ANSI_COLOR_RED     "\x1b[31m"
