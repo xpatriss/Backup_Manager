@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -33,19 +34,13 @@
 #define MAX_PATH 4096
 #define ERR(source) (perror(source), fprintf(stderr, "%s:%d\n", __FILE__, __LINE__), kill(0, SIGKILL), exit(EXIT_FAILURE))
 
+
 enum types
 {
     FILE_TYPE,       // 0
     DIRECTORY_TYPE,  // 1
     SYMLINK_TYPE     // 2
 };
-
-typedef struct
-{
-    char* names[MAX_SIZE];
-    ssize_t sizes[MAX_SIZE];
-    int count;
-} elements;
 
 typedef struct 
 {
@@ -56,6 +51,9 @@ typedef struct
     enum types type;
 } file;
 
+void free_file_pointer_tab(file** tab);
+void sethandler(void (*f)(int), int sigNo);
+void cleanup(char* input, char** argv, int argc);
 void usage(char* pname, char* args);
 char* join_path(char *dir, char *name);
 //void safe_malloc(size_t size);
