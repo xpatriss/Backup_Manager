@@ -4,12 +4,43 @@
 
 volatile sig_atomic_t app_running = 1;
 
-void exit_handler(int sig)
+void exit_function(struct BackupsMap* map)
 {
+    if (map->backup_count != 0)
+    { 
+        for (int i = 0; i < map->backup_count; i++) 
+        {
+            pid_t pid = map->backup_map[i].pid;
+            
+            if (pid > 0) 
+            {
+                printf("ending backup of %s: '%s' pid=%d\n", map->backup_map[i].source, map->backup_map[i].target, pid);
+                kill(pid, SIGKILL);
+            }
+        }
+
+        for (int i = 0; i < map->backup_count; i++) 
+        {
+            pid_t pid = map->backup_map[i].pid;
+            int status;
+
+            if (pid > 0) 
+            {
+                waitpid(pid, &status, 0);
+                //printf("Proces PID %d zakończony.\n", pid);
+            }
+
+            free(map->backup_map[i].source);
+            free(map->backup_map[i].target);
+        }
+
+        map->backup_count = 0;
+    }
+
     app_running = 0;
 }
 
-void making_realpaths(int instr_argc, char** instr_argv)
+int making_realpaths(int instr_argc, char** instr_argv)
 {
     errno = 0;
             char* source = realpath(instr_argv[1], NULL);
@@ -17,13 +48,13 @@ void making_realpaths(int instr_argc, char** instr_argv)
             {
                 fprintf(stderr, ANSI_COLOR_RED "\nThe source directory doesn't exist!\n" ANSI_COLOR_RESET);
                 free(source);
-                return;
+                return -1;
             }
             else if (source == NULL)
             {
                 perror("realpath failed");
                 free(source);
-                return;
+                return -1;
             }
 
             char* targets[instr_argc - 2]; 
@@ -42,7 +73,7 @@ void making_realpaths(int instr_argc, char** instr_argv)
                                 free(targets[j]);
                             }
                         }
-                        return;
+                        return -1;
                     }
                     targets[i] = realpath(instr_argv[i + 2], NULL);
                 }
@@ -55,7 +86,7 @@ void making_realpaths(int instr_argc, char** instr_argv)
                             free(targets[j]);
                         }
                     }
-                    return;
+                    return -1;
                 }
             }
 
@@ -66,9 +97,10 @@ void making_realpaths(int instr_argc, char** instr_argv)
                 free(instr_argv[i]);
                 instr_argv[i] = targets[i - 2];
             }
+            return 0;
 }
 
-void get_instruction(int instr_argc, char** instr_argv)
+void get_instruction(int instr_argc, char** instr_argv, struct BackupsMap* map)
 {
         if ((strcmp(instr_argv[0], "add")) == 0)
         {
@@ -78,7 +110,10 @@ void get_instruction(int instr_argc, char** instr_argv)
                 return;
             }
 
-            making_realpaths(instr_argc, instr_argv);
+            if (making_realpaths(instr_argc, instr_argv) == -1)
+            {
+                return;
+            }
             char* source = instr_argv[1];
             size_t src_len = strlen(source);
 
@@ -93,21 +128,48 @@ void get_instruction(int instr_argc, char** instr_argv)
                         return;
                     }
                 }
+                
             }
-            int ret = fork();
-            switch (ret)
-            {
-                case(-1):
-                    fprintf(stderr, ANSI_COLOR_RED "\nFork failed!\n" ANSI_COLOR_RESET);
-                    return;
-                case(0):
-                    add_action(instr_argv[1], instr_argv[2]);
-                    exit(EXIT_SUCCESS);
-                    break;
-                default:
-                    break;
 
+            
+
+            for (int i = 2; i < instr_argc; i++)
+            {
+                if (isEmpty(instr_argv[i]) != 0)
+                {
+                    continue;
+                }
+                int correct = 0;
+                for (int j = 0; j < map->backup_count; j++)
+                {
+                    if (strcmp(map->backup_map[j].target, instr_argv[i]) == 0)
+                    {
+                        fprintf(stderr, ANSI_COLOR_RED "\nTarget '%s' already contains a backup!\n" ANSI_COLOR_RESET, instr_argv[i]);
+                        correct = -1;
+                        break;
+                    }
+                }
+                if (correct == 0)
+                {
+                    int ret = fork();
+                    switch (ret)
+                    {
+                        case(-1):
+                            fprintf(stderr, ANSI_COLOR_RED "\nFork failed!\n" ANSI_COLOR_RESET);
+                            return;
+                        case(0):
+                            add_action(instr_argv[1], instr_argv[i]);
+                            exit(EXIT_SUCCESS);
+                            break; 
+                        default:
+                            add_to_BackupMap(map, ret, instr_argv[1], instr_argv[i]);
+                            break;
+
+                    }
+                }
+                
             }
+            
         }
         else if ((strcmp(instr_argv[0], "end")) == 0)
         {
@@ -133,7 +195,7 @@ void get_instruction(int instr_argc, char** instr_argv)
                 return;
             }
 
-            app_running = 0;
+            exit_function(map);
         }
         else if ((strcmp(instr_argv[0], "list")) == 0)
         {
@@ -150,34 +212,8 @@ void get_instruction(int instr_argc, char** instr_argv)
         }
 }
 
-int main(int argc, char** argv)
+void hello()
 {
-    if (argc != 1)
-    {
-        usage(argv[0], NULL);
-        exit(EXIT_FAILURE);
-    }
-
-    sethandler(exit_handler, SIGINT);
-    sethandler(exit_handler, SIGTERM);
-
-    sigset_t mask;
-    
-    sigfillset(&mask);
-
-    sigdelset(&mask, SIGINT);
-    sigdelset(&mask, SIGTERM);
-
-    sigdelset(&mask, SIGSEGV); // Błąd pamięci
-    sigdelset(&mask, SIGFPE);  // Dzielenie przez zero itp.
-    sigdelset(&mask, SIGILL);  // Nieprawidłowa instrukcja
-    sigdelset(&mask, SIGBUS);  // Błąd szyny
-
-    if (sigprocmask(SIG_SETMASK, &mask, NULL) == -1) {
-        perror("sigprocmask error");
-        exit(EXIT_FAILURE);
-    }
-
     printf(ANSI_BOLD "\nHello! Welcome to the Backup Manager. You can use one of the commands:\n" ANSI_COLOR_RESET);
     printf("\n");
     printf(ANSI_BOLD ANSI_COLOR_MAGENTA "add" ANSI_COLOR_RESET
@@ -193,15 +229,30 @@ int main(int argc, char** argv)
     printf(ANSI_BOLD ANSI_COLOR_MAGENTA "exit" ANSI_COLOR_RESET
                                         "                        - stops running the program\n");
     printf("\n");
+}
+
+int main(int argc, char** argv)
+{
+    if (argc != 1)
+    {
+        usage(argv[0], NULL);
+        exit(EXIT_FAILURE);
+    }
+
+    ignore_signals();
+
+    hello();
 
     size_t len = 0;
     char* input = NULL;
     char* instr_argv[MAX_ARG] = {0};
     int instr_argc = 0;
 
+    struct BackupsMap map = {0};
+
     while (app_running)
     {
-        printf("\nWrite a command and press ENTER\n");
+        printf("\nWrite a command and press ENTER\n> ");
         if (getline(&input, &len, stdin) == -1)
         {
             if (errno == EINTR) continue; 
@@ -217,21 +268,10 @@ int main(int argc, char** argv)
 
         instr_argc = parse(input, instr_argv);
 
-        
-        
-
         if (instr_argc != 0)
         {
-            get_instruction(instr_argc, instr_argv);
+            get_instruction(instr_argc, instr_argv, &map);
         }
-
-        // printf("\nDEBUG: argc = %d, instruction = %s\n", instr_argc, instr_argv[0]);
-        /*
-        if (instr_argc > 1)
-            printf(" source = %s\n", instr_argv[1]);
-        if (instr_argc > 2)
-            printf(" target = %s\n", instr_argv[2]);
-        */
 
         for (int i = 0; i < instr_argc; i++)
         {
@@ -241,8 +281,6 @@ int main(int argc, char** argv)
     }
 
     cleanup(input, instr_argv, 0);
-    while (wait(NULL) > 0)
-    {
-    }
+
     return 0;
 }

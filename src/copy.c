@@ -1,105 +1,5 @@
 #include "copy.h"
 
-file** scan_dir(char* path)
-{
-    DIR* dirp;             
-    struct dirent* dp;     
-    struct stat filestat;  
-
-    file** tab = NULL;
-    int content_count = 0;
-
-    if ((dirp = opendir(path)) == NULL)
-    {
-        perror("opendir failed");
-        return NULL;
-    }
-
-    do
-    {
-        errno = 0;
-        if ((dp = readdir(dirp)) != NULL)
-        {
-            if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
-                continue;
-
-            char* full_path = join_path(path, dp->d_name);
-
-            if (lstat(full_path, &filestat))
-            {
-                free(full_path);
-                perror("lstat failed");
-                return NULL;
-            }
-
-            if (!S_ISDIR(filestat.st_mode) && !S_ISREG(filestat.st_mode) && !S_ISLNK(filestat.st_mode))
-            {
-                fprintf(stderr, "\nunrecognizable file type\n");
-                continue;
-            }
-
-            ssize_t new_size = (content_count + 2) * sizeof(file*);
-                file** temp = realloc(tab, new_size);
-
-                if (temp == NULL)
-                {
-                    ERR("realloc");
-                }
-
-                tab = temp;
-
-                tab[content_count] = malloc(sizeof(file));
-                tab[content_count]->name = strdup(dp->d_name);
-                tab[content_count]->real_path = strdup(full_path);
-                tab[content_count]->perms = filestat.st_mode & 0777;
-
-            if (S_ISDIR(filestat.st_mode))
-            {
-                tab[content_count]->type = DIRECTORY_TYPE;
-            }
-            else if (S_ISREG(filestat.st_mode))
-            {
-                tab[content_count]->type = FILE_TYPE;
-            }
-            else if (S_ISLNK(filestat.st_mode))
-            {
-                tab[content_count]->type = SYMLINK_TYPE;
-            }
-            
-            content_count++;
-            free(full_path);
-        }
-
-    } while (dp != NULL);
-
-    if (errno != 0)
-    {
-        perror("readdir failed");
-        return NULL;
-    }
-
-    if (closedir(dirp))
-    {
-        perror("closedir failed");
-        return NULL;
-    }
-
-    if (content_count == 0)
-    {
-        ssize_t new_size = (content_count + 1) * sizeof(file*);
-        file** temp = realloc(tab, new_size);
-
-        if (temp == NULL)
-        {
-            ERR("realloc");
-        }
-
-        tab = temp;
-    }
-    tab[content_count] = NULL;
-
-    return tab;
-}
 
 
 
@@ -124,6 +24,9 @@ void copy_file(char* target, file* f)
 
     int count = 0;
     ssize_t bytes_read;
+    free(source_path);
+    free(target_path);
+
     while ((bytes_read = bulk_read(fd1, buf, sizeof(buf))) > 0)
     {
         if ((count = bulk_write(fd2, buf, bytes_read)) < 0)
@@ -150,8 +53,7 @@ void copy_file(char* target, file* f)
         return;
     }
 
-    free(source_path);
-    free(target_path);
+    
 }
 
 void copy_symlink(char* s_root, char* t_root, char* source, char* target, file* s)

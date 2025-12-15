@@ -17,7 +17,8 @@ struct WatchMap
     int watch_count;
 };
 
-void backup(char* watched_dir, char* target);
+void update_watch_paths(struct WatchMap *map, const char *old_path, const char *new_path);
+void backuping(char* watched_dir, char* target);
 void add_watch_recursive(int notify_fd, struct WatchMap *map, char *watched_dir);
 void remove_from_map(struct WatchMap *map, int wd);
 struct Watch *find_watch(struct WatchMap *map, int wd);

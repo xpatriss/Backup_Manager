@@ -79,7 +79,26 @@ void add_watch_recursive(int notify_fd, struct WatchMap *map, char *watched_dir)
     closedir(dir);
 }
 
-void backup(char* watched_dir, char* target)
+void update_watch_paths(struct WatchMap *map, const char *old_path, const char *new_path) 
+{
+    size_t old_len = strlen(old_path);
+
+    for (int i = 0; i < map->watch_count; i++) {
+        if (strncmp(map->watch_map[i].path, old_path, old_len) == 0 && (
+                map->watch_map[i].path[old_len] == '/' || map->watch_map[i].path[old_len] == '\0')) {
+            char new_full_path[PATH_MAX];
+            // Sklej nową ścieżkę z resztą (sufiksem) starej ścieżki
+            snprintf(new_full_path, sizeof(new_full_path), "%s%s",
+                     new_path, map->watch_map[i].path + old_len);
+
+            free(map->watch_map[i].path);
+            map->watch_map[i].path = strdup(new_full_path);
+        }
+    }
+}
+
+
+void backuping(char* watched_dir, char* target)
 {
     int notify_fd = inotify_init();
     if (notify_fd < 0) {
@@ -91,7 +110,11 @@ void backup(char* watched_dir, char* target)
 
     add_watch_recursive(notify_fd, &map, watched_dir);
 
-    while (1) 
+    uint32_t pending_cookie = 0;
+    char pending_move_path[PATH_MAX] = "";
+
+
+    while (map.watch_count > 0) 
     {
         char buffer[EVENT_BUF_LEN];
         ssize_t event_count = read(notify_fd, buffer, EVENT_BUF_LEN);
@@ -102,6 +125,7 @@ void backup(char* watched_dir, char* target)
         }
 
         ssize_t i = 0;
+
         while (i < event_count) 
         {
             struct inotify_event* event = (struct inotify_event*) &buffer[i];
@@ -131,54 +155,149 @@ void backup(char* watched_dir, char* target)
 
                 if (event->mask & IN_ISDIR) 
                 {
-                    
-                    continue;
-                    // Handle tree insertions
-                    if (event->mask & IN_CREATE || event->mask & IN_MOVED_TO) 
+                    if (event->mask & IN_CREATE)
                     {
+                        printf("\n'%s' was CREATED", event_path);
+                        fflush(stdout);
                         add_watch_recursive(notify_fd, &map, event_path);
-                        //add dir//
+                        file* element = make_file_struct(event->name, event_path);
+                        size_t root_len = strlen(watched_dir);
+                        char* relative_dir = watch->path + root_len; 
+                        char* full_target_path = join_path(target, relative_dir);
+                        copy_directory(watched_dir, target, full_target_path, element);
+                        free(full_target_path);
+                        free(element->name);
+                        free(element->real_path);
+                        free(element);
+                    }
+                    if (event->mask & IN_MOVED_TO) 
+                    {
+                        printf("\n'%s' was MOVED TO (cookie=%u)", event_path, event->cookie); 
+                        fflush(stdout);
+
+                        if (event->cookie == pending_cookie && pending_cookie != 0)     // ZMIENIONA NAZWA
+                        {
+                            update_watch_paths(&map, pending_move_path, event_path);
+                            
+                            file* element = make_file_struct(event->name, event_path);
+                            size_t root_len = strlen(watched_dir);
+                            char* relative_dir = watch->path + root_len; 
+                            char* full_target_path = join_path(target, relative_dir);
+                            copy_directory(watched_dir, target, full_target_path, element);
+                            free(full_target_path);
+                            free(element->name);
+                            free(element->real_path);
+                            free(element);
+                            
+                            pending_cookie = 0;
+                            pending_move_path[0] = '\0';
+                        } else                                                          // NOWY KATALOG
+                        {
+                            add_watch_recursive(notify_fd, &map, event_path);
+                            file* element = make_file_struct(event->name, event_path);
+                            size_t root_len = strlen(watched_dir);
+                            char* relative_dir = watch->path + root_len; 
+                            char* full_target_path = join_path(target, relative_dir);
+                            copy_directory(watched_dir, target, full_target_path, element);
+                            free(full_target_path);
+                            free(element->name);
+                            free(element->real_path);
+                            free(element);
+                        }
+
                     }
                     if (event->mask & IN_MOVED_FROM)
                     {
-                        //delete dir//
+                        printf("\n'%s' was MOVED FROM (cookie=%u)", event_path, event->cookie); 
+                        fflush(stdout);
+                        pending_cookie = event->cookie;
+                        strncpy(pending_move_path, event_path, sizeof(pending_move_path));
+
+                        delete_dir(watched_dir, target, event_path);
+
                     }
+                    if(event->mask & IN_DELETE)
+                    {
+                        printf("\n'%s' was DELETED", event_path);
+                        fflush(stdout);
+                        delete_dir(watched_dir, target, event_path);
+                    }
+
                 } 
-                else if (event->mask & IN_CREATE || event->mask & IN_MOVED_TO)
+                else if (event->mask & IN_CREATE && !(event->mask & IN_ISDIR)) 
                 {
-                    printf("\n'%s' was CREATED / MOVED TO", event_path);
+                    printf("\n'%s' was CREATED", event_path);
                     fflush(stdout);
                     file* element = make_file_struct(event->name, event_path);
+                    size_t root_len = strlen(watched_dir);
+                    char* relative_dir = watch->path + root_len; 
+                    char* full_target_path = join_path(target, relative_dir);
+                    
                     if (element->type == FILE_TYPE) 
                     { 
-                        copy_file(target, element);                    
+                        copy_file(full_target_path, element);                    
                     }
                     else if (element->type == SYMLINK_TYPE)
                     {
-                        copy_symlink(watched_dir, target, watched_dir, target, element);
+                        copy_symlink(watched_dir, target, watched_dir, full_target_path, element);
                     }
+                    free(full_target_path);
                     free(element->name);
                     free(element->real_path);
                     free(element);
                 }
-                else if (event->mask & IN_MOVED_FROM)
+                else if (event->mask & IN_MOVED_TO && !(event->mask & IN_ISDIR))
+                {
+                    printf("\n'%s' was MOVED TO", event_path);
+                    fflush(stdout);
+                    file* element = make_file_struct(event->name, event_path);
+                    size_t root_len = strlen(watched_dir);
+                    char* relative_dir = watch->path + root_len; 
+                    char* full_target_path = join_path(target, relative_dir);
+                    
+                    if (element->type == FILE_TYPE) 
+                    { 
+                        copy_file(full_target_path, element);                    
+                    }
+                    else if (element->type == SYMLINK_TYPE)
+                    {
+                        copy_symlink(watched_dir, target, watched_dir, full_target_path, element);
+                    }
+                    free(full_target_path);
+                    free(element->name);
+                    free(element->real_path);
+                    free(element);
+                }
+                else if (event->mask & IN_MOVED_FROM && !(event->mask & IN_ISDIR))
                 {
                     printf("\n'%s' was MOVED FROM", event_path);
                     fflush(stdout);
                     delete_file(watched_dir, target, event_path);
                 }
-                else if (event->mask & IN_CLOSE_WRITE)
+                else if (event->mask & IN_CLOSE_WRITE && !(event->mask & IN_ISDIR))
                 {
                     printf("\n'%s' was MODIFIED", event_path);
                     fflush(stdout);
                     delete_file(watched_dir, target, event_path);
                     file* element = make_file_struct(event->name, event_path);
-                    copy_file(target, element);
+                    size_t root_len = strlen(watched_dir);
+                    char* relative_dir = watch->path + root_len; 
+                    char* full_target_path = join_path(target, relative_dir);
+                    
+                    if (element->type == FILE_TYPE) 
+                    { 
+                        copy_file(full_target_path, element);                    
+                    }
+                    else if (element->type == SYMLINK_TYPE)
+                    {
+                        copy_symlink(watched_dir, target, watched_dir, full_target_path, element);
+                    }
+                    free(full_target_path);
                     free(element->name);
                     free(element->real_path);
                     free(element);
                 }
-                else if (event->mask & IN_DELETE)
+                else if (event->mask & IN_DELETE && !(event->mask & IN_ISDIR))
                 {
                     printf("\n'%s' was DELETED", event_path);
                     fflush(stdout);

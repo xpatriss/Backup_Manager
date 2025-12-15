@@ -6,7 +6,7 @@ void add_action(char* source, char* target)
     DIR* dirp;
     if ((dirp = opendir(target)) == NULL)
     {
-        if (errno == ENOENT)
+        /*if (errno == ENOENT)
         {
             if (mkdir(target, 0777))
             {
@@ -14,28 +14,15 @@ void add_action(char* source, char* target)
                 return;
             }
         }
-        else
-        {
+        else*/
+        //{
             perror("opendir failed");
             return;
-        }
+        //}
     }
     else
     {
-        file** target_content = scan_dir(target);
-        if (target_content[0] != NULL)
-        {
-            fprintf(stderr, ANSI_COLOR_RED "\nTarget directory in not empty!\n" ANSI_COLOR_RESET);
-            free_file_pointer_tab(target_content);
-            if (closedir(dirp))
-            {
-                perror("closedir failed");
-                return;
-            }
-            return;
-        }
-
-        free_file_pointer_tab(target_content);
+        
 
         if (closedir(dirp))
         {
@@ -48,7 +35,7 @@ void add_action(char* source, char* target)
 
     copy(source, target, source, target, content);  // kopiuje elementy do katalogu docelowego
 
-    backup(source, target);
+    backuping(source, target);
 
     free_file_pointer_tab(content);
 }

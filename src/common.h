@@ -31,13 +31,14 @@
 // Style
 #define ANSI_BOLD          "\x1b[1m"
 
+#define MAX_BACKUPS 30
 #define MAX_WATCHES 8192
 #define EVENT_BUF_LEN (64 * (sizeof(struct inotify_event) + NAME_MAX + 1))
 #define MAX_ARG 10
 #define MAX_SIZE 4096
 #define MAX_PATH 4096
 
-#define ERR(source) (perror(source), fprintf(stderr, "%s:%d\n", __FILE__, __LINE__), kill(0, SIGKILL), exit(EXIT_FAILURE))
+#define ERR(source) (perror(source), fprintf(stderr, "%s:%d\n", __FILE__, __LINE__), exit(EXIT_FAILURE))
 
 
 enum types
@@ -56,6 +57,25 @@ typedef struct
     enum types type;
 } file;
 
+struct backup
+{
+    int pid;
+    char* source;
+    char* target;
+};
+
+struct BackupsMap
+{
+    struct backup backup_map[MAX_BACKUPS];
+    int backup_count;
+};
+
+file** scan_dir(char* path);
+int isEmpty(char* target);
+void add_to_BackupMap(struct BackupsMap *map, int pid, char* source, char* target);
+struct backup *find_backup(struct BackupsMap *map, int pid);
+void remove_from_BackupMap(struct BackupsMap *map, int pid);
+void ignore_signals();
 void free_file_pointer_tab(file** tab);
 void sethandler(void (*f)(int), int sigNo);
 void cleanup(char* input, char** argv, int argc);
