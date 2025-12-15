@@ -17,6 +17,8 @@
 #include <unistd.h> 
 #include <ftw.h> 
 #include <ctype.h>
+#include <sys/inotify.h>
+#include <limits.h>
 
 // Definicje kolorów ANSI
 #define ANSI_COLOR_RED     "\x1b[31m"
@@ -26,13 +28,15 @@
 #define ANSI_COLOR_MAGENTA "\x1b[35m"
 #define ANSI_COLOR_CYAN    "\x1b[36m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
-
 // Style
 #define ANSI_BOLD          "\x1b[1m"
 
+#define MAX_WATCHES 8192
+#define EVENT_BUF_LEN (64 * (sizeof(struct inotify_event) + NAME_MAX + 1))
 #define MAX_ARG 10
 #define MAX_SIZE 4096
 #define MAX_PATH 4096
+
 #define ERR(source) (perror(source), fprintf(stderr, "%s:%d\n", __FILE__, __LINE__), kill(0, SIGKILL), exit(EXIT_FAILURE))
 
 
@@ -57,6 +61,9 @@ void sethandler(void (*f)(int), int sigNo);
 void cleanup(char* input, char** argv, int argc);
 void usage(char* pname, char* args);
 char* join_path(char *dir, char *name);
+ssize_t bulk_write(int fd, char *buf, size_t count);
+ssize_t bulk_read(int fd, char *buf, size_t count);
+file* make_file_struct(char* name, char* path);
 //void safe_malloc(size_t size);
 
 #endif 

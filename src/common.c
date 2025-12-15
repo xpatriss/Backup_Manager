@@ -79,6 +79,91 @@ void free_file_pointer_tab(file** tab)
             free(tab);
 }
 
+ssize_t bulk_read(int fd, char* buf, size_t count)
+{
+    ssize_t c;
+    ssize_t len = 0;
+
+    do
+    {
+        c = TEMP_FAILURE_RETRY(read(fd, buf, count));
+        if (c < 0)
+            return c;
+
+        if (c == 0)
+            return len;  // EOF
+
+        buf += c;
+        len += c;
+        count -= c;
+    } while (count > 0);
+
+    return len;
+}
+
+ssize_t bulk_write(int fd, char* buf, size_t count)
+{
+    ssize_t c;
+    ssize_t len = 0;
+
+    do
+    {
+        c = TEMP_FAILURE_RETRY(write(fd, buf, count));
+        if (c < 0)
+            return c;
+
+        buf += c;
+        len += c;
+        count -= c;
+    } while (count > 0);
+
+    return len;
+}
+
+file* make_file_struct(char* name, char* path)
+{
+    struct stat file_info;
+
+                    file* element = malloc(sizeof(file));
+
+                    if (element == NULL)
+                    {
+                        ERR("malloc");
+                    }
+                        
+                    if (lstat(path, &file_info) == 0) 
+                    {
+                        element->name = strdup(name);
+                        element->real_path = strdup(path);
+                        element->perms = file_info.st_mode & 0777;
+                        if (S_ISREG(file_info.st_mode))
+                        {
+                            element->type = FILE_TYPE;
+                        }
+                        else if (S_ISDIR(file_info.st_mode))
+                        {
+                            element->type = DIRECTORY_TYPE;
+                        }
+                        else if (S_ISLNK(file_info.st_mode))
+                        {
+                            element->type = SYMLINK_TYPE;
+                        }
+                        else
+                        {
+                            fprintf(stderr, "\nunrecognizable file type\n");
+                            return NULL;
+                        }
+                    }
+                    else
+                    {
+                        perror("lstat");
+                    }
+
+                    return element;
+
+
+}
+
 /*
 void* safe_malloc(size_t size) {
     void *ptr = malloc(size);

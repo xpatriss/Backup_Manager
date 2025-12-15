@@ -70,13 +70,7 @@ void making_realpaths(int instr_argc, char** instr_argv)
 
 void get_instruction(int instr_argc, char** instr_argv)
 {
-        int add = strcmp(instr_argv[0], "add");
-        int end = strcmp(instr_argv[0], "end");
-        int exit = strcmp(instr_argv[0], "exit");
-        int restore = strcmp(instr_argv[0], "restore");
-        int list = strcmp(instr_argv[0], "list");
-
-        if (add == 0)
+        if ((strcmp(instr_argv[0], "add")) == 0)
         {
             if (instr_argc < 3)
             {
@@ -100,9 +94,22 @@ void get_instruction(int instr_argc, char** instr_argv)
                     }
                 }
             }
-            add_action(instr_argv[1], instr_argv[2]);
+            int ret = fork();
+            switch (ret)
+            {
+                case(-1):
+                    fprintf(stderr, ANSI_COLOR_RED "\nFork failed!\n" ANSI_COLOR_RESET);
+                    return;
+                case(0):
+                    add_action(instr_argv[1], instr_argv[2]);
+                    exit(EXIT_SUCCESS);
+                    break;
+                default:
+                    break;
+
+            }
         }
-        else if (end == 0)
+        else if ((strcmp(instr_argv[0], "end")) == 0)
         {
             if (instr_argc < 3)
             {
@@ -110,7 +117,7 @@ void get_instruction(int instr_argc, char** instr_argv)
                 return;
             }
         }
-        else if (restore == 0)
+        else if ((strcmp(instr_argv[0], "restore")) == 0)
         {
             if (instr_argc != 3)
             {
@@ -118,16 +125,17 @@ void get_instruction(int instr_argc, char** instr_argv)
                 return;
             }
         }
-        else if (exit == 0)
+        else if ((strcmp(instr_argv[0], "exit") == 0))
         {
             if (instr_argc != 1)
             {
                 usage(instr_argv[0], NULL);
                 return;
             }
+
             app_running = 0;
         }
-        else if (list == 0)
+        else if ((strcmp(instr_argv[0], "list")) == 0)
         {
             if (instr_argc != 1)
             {
@@ -233,5 +241,8 @@ int main(int argc, char** argv)
     }
 
     cleanup(input, instr_argv, 0);
+    while (wait(NULL) > 0)
+    {
+    }
     return 0;
 }
