@@ -1,5 +1,7 @@
 #include "add_command.h"
 #include "common.h"
+#include "end_command.h"
+#include "list_command.h"
 #include "parse.h"
 
 volatile sig_atomic_t app_running = 1;
@@ -7,27 +9,27 @@ volatile sig_atomic_t app_running = 1;
 void exit_function(struct BackupsMap* map)
 {
     if (map->backup_count != 0)
-    { 
-        for (int i = 0; i < map->backup_count; i++) 
+    {
+        for (int i = 0; i < map->backup_count; i++)
         {
             pid_t pid = map->backup_map[i].pid;
-            
-            if (pid > 0) 
+
+            if (pid > 0)
             {
                 printf("ending backup of %s: '%s' pid=%d\n", map->backup_map[i].source, map->backup_map[i].target, pid);
                 kill(pid, SIGKILL);
             }
         }
 
-        for (int i = 0; i < map->backup_count; i++) 
+        for (int i = 0; i < map->backup_count; i++)
         {
             pid_t pid = map->backup_map[i].pid;
             int status;
 
-            if (pid > 0) 
+            if (pid > 0)
             {
                 waitpid(pid, &status, 0);
-                //printf("Proces PID %d zakończony.\n", pid);
+                // printf("Proces PID %d zakończony.\n", pid);
             }
 
             free(map->backup_map[i].source);
@@ -43,173 +45,184 @@ void exit_function(struct BackupsMap* map)
 int making_realpaths(int instr_argc, char** instr_argv)
 {
     errno = 0;
-            char* source = realpath(instr_argv[1], NULL);
-            if ((source == NULL) && (errno == ENOENT))
+    char* source = realpath(instr_argv[1], NULL);
+    if ((source == NULL) && (errno == ENOENT))
+    {
+        fprintf(stderr, ANSI_COLOR_RED "\nThe source directory doesn't exist!\n" ANSI_COLOR_RESET);
+        free(source);
+        return -1;
+    }
+    else if (source == NULL)
+    {
+        perror("realpath failed");
+        free(source);
+        return -1;
+    }
+
+    char* targets[instr_argc - 2];
+    for (int i = 0; i < (instr_argc - 2); i++)
+    {
+        errno = 0;
+        targets[i] = realpath(instr_argv[i + 2], NULL);
+        if ((targets[i] == NULL) && (errno == ENOENT))
+        {
+            if (mkdir(instr_argv[i + 2], 0777))
             {
-                fprintf(stderr, ANSI_COLOR_RED "\nThe source directory doesn't exist!\n" ANSI_COLOR_RESET);
-                free(source);
+                perror("mkdir failed");
+                for (int j = 0; j < (instr_argc - 2); j++)
+                {
+                    if (targets[j] != NULL)
+                    {
+                        free(targets[j]);
+                    }
+                }
                 return -1;
             }
-            else if (source == NULL)
+            targets[i] = realpath(instr_argv[i + 2], NULL);
+        }
+        else if (targets[i] == NULL)
+        {
+            perror("realpath failed");
+            for (int j = 0; j < (instr_argc - 2); j++)
             {
-                perror("realpath failed");
-                free(source);
-                return -1;
-            }
-
-            char* targets[instr_argc - 2]; 
-            for (int i = 0; i < (instr_argc - 2); i++)
-            {
-                errno = 0;
-                targets[i] = realpath(instr_argv[i + 2], NULL);
-                if ((targets[i] == NULL) && (errno == ENOENT))
+                if (targets[j] != NULL)
                 {
-                    if (mkdir(instr_argv[i + 2], 0777))
-                    {
-                        perror("mkdir failed");
-                        for (int j = 0; j < (instr_argc - 2); j++)
-                        {
-                            if (targets[j] != NULL) {
-                                free(targets[j]);
-                            }
-                        }
-                        return -1;
-                    }
-                    targets[i] = realpath(instr_argv[i + 2], NULL);
-                }
-                else if (targets[i] == NULL)
-                {
-                    perror("realpath failed");
-                    for (int j = 0; j < (instr_argc - 2); j++)
-                    {
-                        if (targets[j] != NULL) {
-                            free(targets[j]);
-                        }
-                    }
-                    return -1;
+                    free(targets[j]);
                 }
             }
+            return -1;
+        }
+    }
 
-            free(instr_argv[1]);
-            instr_argv[1] = source;
-            for (int i = 2; i < instr_argc; i++)
-            {
-                free(instr_argv[i]);
-                instr_argv[i] = targets[i - 2];
-            }
-            return 0;
+    free(instr_argv[1]);
+    instr_argv[1] = source;
+    for (int i = 2; i < instr_argc; i++)
+    {
+        free(instr_argv[i]);
+        instr_argv[i] = targets[i - 2];
+    }
+    return 0;
 }
 
 void get_instruction(int instr_argc, char** instr_argv, struct BackupsMap* map)
 {
-        if ((strcmp(instr_argv[0], "add")) == 0)
+    if (instr_argc > 2)
+    {
+        if (making_realpaths(instr_argc, instr_argv) == -1)
         {
-            if (instr_argc < 3)
-            {
-                usage(instr_argv[0], "<source path> <target path 1> <target path 2> ...");
-                return;
-            }
-
-            if (making_realpaths(instr_argc, instr_argv) == -1)
-            {
-                return;
-            }
-            char* source = instr_argv[1];
-            size_t src_len = strlen(source);
-
-            for (int i = 2; i < instr_argc; i++)
-            {
-                char* target = instr_argv[i];
-                if(strncmp(source, target, src_len) == 0)
-                {
-                    if (target[src_len] == '/' || target[src_len] == '\0')
-                    {
-                        fprintf(stderr, ANSI_COLOR_RED "\nTarget '%s' is inside source '%s'!\n" ANSI_COLOR_RESET, target, source);
-                        return;
-                    }
-                }
-                
-            }
-
-            
-
-            for (int i = 2; i < instr_argc; i++)
-            {
-                if (isEmpty(instr_argv[i]) != 0)
-                {
-                    continue;
-                }
-                int correct = 0;
-                for (int j = 0; j < map->backup_count; j++)
-                {
-                    if (strcmp(map->backup_map[j].target, instr_argv[i]) == 0)
-                    {
-                        fprintf(stderr, ANSI_COLOR_RED "\nTarget '%s' already contains a backup!\n" ANSI_COLOR_RESET, instr_argv[i]);
-                        correct = -1;
-                        break;
-                    }
-                }
-                if (correct == 0)
-                {
-                    int ret = fork();
-                    switch (ret)
-                    {
-                        case(-1):
-                            fprintf(stderr, ANSI_COLOR_RED "\nFork failed!\n" ANSI_COLOR_RESET);
-                            return;
-                        case(0):
-                            add_action(instr_argv[1], instr_argv[i]);
-                            exit(EXIT_SUCCESS);
-                            break; 
-                        default:
-                            add_to_BackupMap(map, ret, instr_argv[1], instr_argv[i]);
-                            break;
-
-                    }
-                }
-                
-            }
-            
-        }
-        else if ((strcmp(instr_argv[0], "end")) == 0)
-        {
-            if (instr_argc < 3)
-            {
-                usage(instr_argv[0], "<source path> <target path 1> <target path 2> ...");
-                return;
-            }
-        }
-        else if ((strcmp(instr_argv[0], "restore")) == 0)
-        {
-            if (instr_argc != 3)
-            {
-                usage(instr_argv[0], "<source path> <target path>");
-                return;
-            }
-        }
-        else if ((strcmp(instr_argv[0], "exit") == 0))
-        {
-            if (instr_argc != 1)
-            {
-                usage(instr_argv[0], NULL);
-                return;
-            }
-
-            exit_function(map);
-        }
-        else if ((strcmp(instr_argv[0], "list")) == 0)
-        {
-            if (instr_argc != 1)
-            {
-                usage(instr_argv[0], NULL);
-                return;
-            }
-        }
-        else
-        {
-            printf(ANSI_COLOR_RED "\nUnrecognizable instruction!\n" ANSI_COLOR_RESET);
             return;
         }
+    }
+
+    if ((strcmp(instr_argv[0], "add")) == 0)
+    {
+        if (instr_argc < 3)
+        {
+            usage(instr_argv[0], "<source path> <target path 1> <target path 2> ...");
+            return;
+        }
+
+        char* source = instr_argv[1];
+        size_t src_len = strlen(source);
+
+        for (int i = 2; i < instr_argc; i++)
+        {
+            int correct = 0;
+
+            char* target = instr_argv[i];
+            // czy nie jest wewnatrz source
+            if (strncmp(source, target, src_len) == 0)
+            {
+                if (target[src_len] == '/' || target[src_len] == '\0')
+                {
+                    fprintf(stderr, ANSI_COLOR_RED "\nTarget '%s' is inside source '%s'!\n" ANSI_COLOR_RESET, target,
+                            source);
+                    correct = -1;
+                }
+            }
+            // czy jest pusty
+            if (isEmpty(instr_argv[i]) != 0)
+            {
+                correct = -1;
+            }
+
+            // czy nie ma juz tam backupu
+            for (int j = 0; j < map->backup_count; j++)
+            {
+                if (strcmp(map->backup_map[j].target, instr_argv[i]) == 0)
+                {
+                    fprintf(stderr, ANSI_COLOR_RED "\nTarget '%s' already contains a backup!\n" ANSI_COLOR_RESET,
+                            instr_argv[i]);
+                    correct = -1;
+                    break;
+                }
+            }
+
+            if (correct == 0)
+            {
+                int ret = fork();
+                switch (ret)
+                {
+                    case (-1):
+                        fprintf(stderr, ANSI_COLOR_RED "\nFork failed!\n" ANSI_COLOR_RESET);
+                        return;
+                    case (0):
+                        add_action(instr_argv[1], instr_argv[i]);
+                        exit(EXIT_SUCCESS);
+                        break;
+                    default:
+                        add_to_BackupMap(map, ret, instr_argv[1], instr_argv[i]);
+                        break;
+                }
+            }
+        }
+    }
+    else if ((strcmp(instr_argv[0], "end")) == 0)
+    {
+        if (instr_argc < 3)
+        {
+            usage(instr_argv[0], "<source path> <target path 1> <target path 2> ...");
+            return;
+        }
+
+        for (int i = 2; i < instr_argc; i++)
+        {
+            end_action(map, instr_argv[1], instr_argv[i]);
+        }
+    }
+    else if ((strcmp(instr_argv[0], "restore")) == 0)
+    {
+        if (instr_argc != 3)
+        {
+            usage(instr_argv[0], "<source path> <target path>");
+            return;
+        }
+    }
+    else if ((strcmp(instr_argv[0], "exit") == 0))
+    {
+        if (instr_argc != 1)
+        {
+            usage(instr_argv[0], NULL);
+            return;
+        }
+
+        exit_function(map);
+    }
+    else if ((strcmp(instr_argv[0], "list")) == 0)
+    {
+        if (instr_argc != 1)
+        {
+            usage(instr_argv[0], NULL);
+            return;
+        }
+
+        list_action(map);
+    }
+    else
+    {
+        printf(ANSI_COLOR_RED "\nUnrecognizable instruction!\n" ANSI_COLOR_RESET);
+        return;
+    }
 }
 
 void hello()
@@ -255,7 +268,8 @@ int main(int argc, char** argv)
         printf("\nWrite a command and press ENTER\n> ");
         if (getline(&input, &len, stdin) == -1)
         {
-            if (errno == EINTR) continue; 
+            if (errno == EINTR)
+                continue;
             break;
         }
 

@@ -1,9 +1,5 @@
 #include "copy.h"
 
-
-
-
-
 void copy_file(char* target, file* f)
 {
     int fd1, fd2;
@@ -52,8 +48,6 @@ void copy_file(char* target, file* f)
         perror("close a file failed");
         return;
     }
-
-    
 }
 
 void copy_symlink(char* s_root, char* t_root, char* source, char* target, file* s)

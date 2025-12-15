@@ -16,14 +16,12 @@ void add_action(char* source, char* target)
         }
         else*/
         //{
-            perror("opendir failed");
-            return;
+        perror("opendir failed");
+        return;
         //}
     }
     else
     {
-        
-
         if (closedir(dirp))
         {
             perror("closedir failed");

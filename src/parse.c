@@ -8,11 +8,13 @@ int parse(char* input, char** argv)
 
     while (*ptr != '\0' && argc < MAX_ARG)
     {
-        while (isspace((unsigned char)*ptr)) {
+        while (isspace((unsigned char)*ptr))
+        {
             ptr++;
         }
 
-        if (*ptr == '\0') break;
+        if (*ptr == '\0')
+            break;
 
         char* start = NULL;
         int len = 0;
@@ -20,50 +22,56 @@ int parse(char* input, char** argv)
         if (*ptr == '"')
         {
             // TRYB CUDZYSŁOWU
-            ptr++;       
-            start = ptr; 
+            ptr++;
+            start = ptr;
 
-            while (*ptr != '\0' && *ptr != '"') {
+            while (*ptr != '\0' && *ptr != '"')
+            {
                 ptr++;
                 len++;
             }
 
-            if (*ptr == '\0') {
+            if (*ptr == '\0')
+            {
                 fprintf(stderr, ANSI_COLOR_RED "\nInvalid path! (Missing closing \")\n" ANSI_COLOR_RESET);
-                
-                for (int i = 0; i < argc; i++) {
+
+                for (int i = 0; i < argc; i++)
+                {
                     free(argv[i]);
                     argv[i] = NULL;
                 }
                 return 0;
             }
 
-            ptr++; 
+            ptr++;
         }
         else
         {
             // TRYB NORMALNY (bez cudzysłowu)
             start = ptr;
-            
-            while (*ptr != '\0' && !isspace((unsigned char)*ptr)) {
+
+            while (*ptr != '\0' && !isspace((unsigned char)*ptr))
+            {
                 ptr++;
                 len++;
             }
         }
 
         argv[argc] = malloc(len + 1);
-        if (argv[argc] == NULL) {
+        if (argv[argc] == NULL)
+        {
             perror("malloc");
             return 0;
         }
-        
+
         strncpy(argv[argc], start, len);
         (argv[argc])[len] = '\0';
 
         argc++;
     }
-    
-    for (int i = argc; i < MAX_ARG; i++) {
+
+    for (int i = argc; i < MAX_ARG; i++)
+    {
         argv[i] = NULL;
     }
 
