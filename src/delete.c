@@ -13,7 +13,7 @@ void delete_file(char* source, char* target, char* filepath)
     {
         if (errno != ENOENT)
         {
-            perror("remove failed");
+            PERR("remove");
         }
         free(target_path);
         return;
@@ -27,7 +27,7 @@ int recursive_clean(char* path)
     DIR* d = opendir(path);
     if (!d)
     {
-        perror("opendir failed");
+        PERR("opendir");
         return -1;
     }
 
@@ -51,7 +51,7 @@ int recursive_clean(char* path)
             {
                 if (unlink(full_path) != 0)
                 {
-                    perror("Failed to delete file inside dir");
+                    PERR("unlink");
                 }
             }
         }
@@ -62,7 +62,7 @@ int recursive_clean(char* path)
 
     if (rmdir(path) != 0)
     {
-        perror("Failed to remove directory");
+        PERR("rmdir");
         return -1;
     }
 
@@ -78,8 +78,6 @@ void delete_dir(char* source, char* target, char* dirpath)
         newpath++;
 
     char* target_path = join_path(target, newpath);
-
-    // printf("Recursively deleting dir from backup: %s\n", target_path);
 
     recursive_clean(target_path);
 

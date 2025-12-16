@@ -6,39 +6,13 @@
 
 volatile sig_atomic_t app_running = 1;
 
+void handle_exit_signal(int sig)
+{
+    app_running = 0;
+}
+
 void exit_function(struct BackupsMap* map)
 {
-    if (map->backup_count != 0)
-    {
-        for (int i = 0; i < map->backup_count; i++)
-        {
-            pid_t pid = map->backup_map[i].pid;
-
-            if (pid > 0)
-            {
-                printf("ending backup of %s: '%s' pid=%d\n", map->backup_map[i].source, map->backup_map[i].target, pid);
-                kill(pid, SIGKILL);
-            }
-        }
-
-        for (int i = 0; i < map->backup_count; i++)
-        {
-            pid_t pid = map->backup_map[i].pid;
-            int status;
-
-            if (pid > 0)
-            {
-                waitpid(pid, &status, 0);
-                // printf("Proces PID %d zakończony.\n", pid);
-            }
-
-            free(map->backup_map[i].source);
-            free(map->backup_map[i].target);
-        }
-
-        map->backup_count = 0;
-    }
-
     app_running = 0;
 }
 
@@ -54,7 +28,7 @@ int making_realpaths(int instr_argc, char** instr_argv)
     }
     else if (source == NULL)
     {
-        perror("realpath failed");
+        PERR("realpath");
         free(source);
         return -1;
     }
@@ -68,7 +42,7 @@ int making_realpaths(int instr_argc, char** instr_argv)
         {
             if (mkdir(instr_argv[i + 2], 0777))
             {
-                perror("mkdir failed");
+                PERR("mkdir");
                 for (int j = 0; j < (instr_argc - 2); j++)
                 {
                     if (targets[j] != NULL)
@@ -82,7 +56,7 @@ int making_realpaths(int instr_argc, char** instr_argv)
         }
         else if (targets[i] == NULL)
         {
-            perror("realpath failed");
+            PERR("realpath");
             for (int j = 0; j < (instr_argc - 2); j++)
             {
                 if (targets[j] != NULL)
@@ -104,7 +78,7 @@ int making_realpaths(int instr_argc, char** instr_argv)
     return 0;
 }
 
-void get_instruction(int instr_argc, char** instr_argv, struct BackupsMap* map)
+void get_instruction(int instr_argc, char** instr_argv, struct BackupsMap* map, int ld)
 {
     if (instr_argc > 2)
     {
@@ -164,10 +138,10 @@ void get_instruction(int instr_argc, char** instr_argv, struct BackupsMap* map)
                 switch (ret)
                 {
                     case (-1):
-                        fprintf(stderr, ANSI_COLOR_RED "\nFork failed!\n" ANSI_COLOR_RESET);
+                        PERR("fork");
                         return;
                     case (0):
-                        add_action(instr_argv[1], instr_argv[i]);
+                        add_action(instr_argv[1], instr_argv[i], ld);
                         exit(EXIT_SUCCESS);
                         break;
                     default:
@@ -220,7 +194,7 @@ void get_instruction(int instr_argc, char** instr_argv, struct BackupsMap* map)
     }
     else
     {
-        printf(ANSI_COLOR_RED "\nUnrecognizable instruction!\n" ANSI_COLOR_RESET);
+        fprintf(stderr, ANSI_COLOR_RED "\nUnrecognizable instruction!\n" ANSI_COLOR_RESET);
         return;
     }
 }
@@ -252,7 +226,15 @@ int main(int argc, char** argv)
         exit(EXIT_FAILURE);
     }
 
+    int ld;
+    if ((ld = TEMP_FAILURE_RETRY(open("actions.log", O_WRONLY | O_CREAT | O_APPEND, 0777))) < 0)
+    {
+        ERR("open");
+    }
+
     ignore_signals();
+    sethandler(handle_exit_signal, SIGINT);
+    sethandler(handle_exit_signal, SIGTERM);
 
     hello();
 
@@ -265,7 +247,7 @@ int main(int argc, char** argv)
 
     while (app_running)
     {
-        printf("\nWrite a command and press ENTER\n> ");
+        printf(ANSI_BOLD "\nWrite a command and press ENTER\n> " ANSI_COLOR_RESET);
         if (getline(&input, &len, stdin) == -1)
         {
             if (errno == EINTR)
@@ -284,7 +266,7 @@ int main(int argc, char** argv)
 
         if (instr_argc != 0)
         {
-            get_instruction(instr_argc, instr_argv, &map);
+            get_instruction(instr_argc, instr_argv, &map, ld);
         }
 
         for (int i = 0; i < instr_argc; i++)
@@ -294,7 +276,12 @@ int main(int argc, char** argv)
         }
     }
 
-    cleanup(input, instr_argv, 0);
+    cleanup(input, instr_argv, instr_argc, &map);
+    
+    if (TEMP_FAILURE_RETRY(close(ld)))
+    {
+        ERR("close");
+    }
 
     return 0;
 }

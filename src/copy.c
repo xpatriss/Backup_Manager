@@ -3,18 +3,22 @@
 void copy_file(char* target, file* f)
 {
     int fd1, fd2;
-    char buf[4096];
+    char buf[MAX_BUF];
     char* source_path = strdup(f->real_path);
     char* target_path = join_path(target, f->name);
 
     if ((fd1 = TEMP_FAILURE_RETRY(open(source_path, O_RDONLY))) < 0)
     {
-        perror("open file failed");
+        PERR("open");
+        free(source_path);
+        free(target_path);
         return;
     }
     if ((fd2 = TEMP_FAILURE_RETRY(open(target_path, O_WRONLY | O_CREAT | O_APPEND | O_TRUNC, f->perms))) < 0)
     {
-        perror("open file failed");
+        PERR("open");
+        free(source_path);
+        free(target_path);
         return;
     }
 
@@ -27,25 +31,25 @@ void copy_file(char* target, file* f)
     {
         if ((count = bulk_write(fd2, buf, bytes_read)) < 0)
         {
-            perror("write to file failed");
+            PERR("write");
             return;
         }
     }
     if (bytes_read < 0)
     {
-        perror("read a file failed");
+        PERR("read");
         return;
     }
 
     if (TEMP_FAILURE_RETRY(close(fd1)))
     {
-        perror("close a file failed");
+        PERR("close");
         return;
     }
 
     if (TEMP_FAILURE_RETRY(close(fd2)))
     {
-        perror("close a file failed");
+        PERR("close");
         return;
     }
 }
@@ -59,7 +63,7 @@ void copy_symlink(char* s_root, char* t_root, char* source, char* target, file* 
 
     if (len == -1)
     {
-        perror("readlink");
+        PERR("readlink");
         return;
     }
 
@@ -74,7 +78,6 @@ void copy_symlink(char* s_root, char* t_root, char* source, char* target, file* 
         char* modified = join_path(t_root, file_name);    // nowa zawarosc symlnika
         free(new_content);
         new_content = strdup(modified);
-
         free(modified);
     }
 
@@ -82,7 +85,9 @@ void copy_symlink(char* s_root, char* t_root, char* source, char* target, file* 
 
     if (symlink(new_content, new_name) == -1)
     {
-        perror("creating a symlink failed");
+        PERR("symlink");
+        free(new_name);
+        free(new_content);
         return;
     }
 
@@ -98,7 +103,7 @@ void copy_directory(char* s_root, char* t_root, char* target, file* d)
 
     if (mkdir(new_dir, 0777))
     {
-        perror("mkdir failed");
+        PERR("mkdir");
         free(dir_content);
         free(new_dir);
         return;

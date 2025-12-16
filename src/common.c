@@ -6,7 +6,40 @@ void usage(char* pname, char* args)
         fprintf(stderr, ANSI_COLOR_CYAN "USAGE: %s %s\n" ANSI_COLOR_RESET, pname, args);
     else
         fprintf(stderr, ANSI_COLOR_CYAN "USAGE: %s \n" ANSI_COLOR_RESET, pname);
-    // exit(EXIT_FAILURE);
+}
+
+void log_print(int ld, int pid, char* first, char* second, char* third)
+{
+    if (ld < 0) return;
+
+    char buf[MAX_BUF]; 
+    int len = 0;
+
+    len += snprintf(buf + len, MAX_BUF - len, "[PID: %d]", pid);
+
+    if (first != NULL) 
+    {
+        len += snprintf(buf + len, MAX_BUF - len, " %s", first);
+    }
+
+    if (second != NULL) 
+    {
+        len += snprintf(buf + len, MAX_BUF - len, " %s", second);
+    }
+
+    if (third != NULL) 
+    {
+        len += snprintf(buf + len, MAX_BUF - len, " %s", third);
+    }
+
+    if (len < MAX_BUF - 1)
+    {
+        buf[len++] = '\n';
+        buf[len] = '\0';
+    }
+
+    bulk_write(ld, buf, len);
+    return;
 }
 
 char* join_path(char* dir, char* name)
@@ -28,7 +61,7 @@ void add_to_BackupMap(struct BackupsMap* map, int pid, char* source, char* targe
 {
     if (map->backup_count >= MAX_BACKUPS)
     {
-        fprintf(stderr, "Exceeded max backups!\n");
+        fprintf(stderr, ANSI_COLOR_RED "\nExceeded max backups!\n" ANSI_COLOR_RESET);
         return;
     }
 
@@ -36,7 +69,7 @@ void add_to_BackupMap(struct BackupsMap* map, int pid, char* source, char* targe
     map->backup_map[map->backup_count].source = strdup(source);
     map->backup_map[map->backup_count].target = strdup(target);
     map->backup_count++;
-    printf("new backup of '%s': '%s' pid=%d\n", source, target, pid);
+    printf(ANSI_COLOR_YELLOW "\nNew backup of '%s' in '%s' [pid = %d]\n" ANSI_COLOR_RESET, source, target, pid);
 }
 
 struct backup* find_backup(struct BackupsMap* map, char* target)
@@ -57,8 +90,6 @@ void remove_from_BackupMap(struct BackupsMap* map, int pid)
     {
         if (map->backup_map[i].pid == pid)
         {
-            printf("removing backup of '%s': '%s' pid=%d\n", map->backup_map[i].source, map->backup_map[i].target, pid);
-            // printf("removing backup: '%s' @pid=%d\n", map->backup_map[i].path, pid);
             free(map->backup_map[i].source);
             free(map->backup_map[i].target);
             map->backup_map[i] = map->backup_map[map->backup_count - 1];
@@ -79,7 +110,7 @@ file** scan_dir(char* path)
 
     if ((dirp = opendir(path)) == NULL)
     {
-        perror("opendir failed");
+        PERR("opendir");
         return NULL;
     }
 
@@ -96,13 +127,12 @@ file** scan_dir(char* path)
             if (lstat(full_path, &filestat))
             {
                 free(full_path);
-                perror("lstat failed");
+                PERR("lstat");
                 return NULL;
             }
 
             if (!S_ISDIR(filestat.st_mode) && !S_ISREG(filestat.st_mode) && !S_ISLNK(filestat.st_mode))
             {
-                fprintf(stderr, "\nunrecognizable file type\n");
                 continue;
             }
 
@@ -111,6 +141,7 @@ file** scan_dir(char* path)
 
             if (temp == NULL)
             {
+                free(full_path);
                 ERR("realloc");
             }
 
@@ -142,13 +173,13 @@ file** scan_dir(char* path)
 
     if (errno != 0)
     {
-        perror("readdir failed");
+        PERR("readdir");
         return NULL;
     }
 
     if (closedir(dirp))
     {
-        perror("closedir failed");
+        PERR("closedir");
         return NULL;
     }
 
@@ -183,10 +214,39 @@ int isEmpty(char* target)
     return 0;
 }
 
-void cleanup(char* input, char** argv, int argc)
+void cleanup(char* input, char** argv, int argc, struct BackupsMap* map)
 {
-    printf(ANSI_BOLD ANSI_COLOR_YELLOW "\nCleaning up resources...\n" ANSI_COLOR_RESET);
+    printf(ANSI_COLOR_YELLOW "\nCleaning up resources...\n" ANSI_COLOR_RESET);
 
+    if (map->backup_count != 0)
+    {
+        for (int i = 0; i < map->backup_count; i++)
+        {
+            pid_t pid = map->backup_map[i].pid;
+
+            if (pid > 0)
+            {
+                kill(pid, SIGKILL);
+            }
+        }
+
+        for (int i = 0; i < map->backup_count; i++)
+        {
+            pid_t pid = map->backup_map[i].pid;
+            int status;
+
+            if (pid > 0)
+            {
+                waitpid(pid, &status, 0);
+            }
+
+            free(map->backup_map[i].source);
+            free(map->backup_map[i].target);
+        }
+
+        map->backup_count = 0;
+    }
+    
     if (input != NULL)
     {
         free(input);
@@ -198,24 +258,7 @@ void cleanup(char* input, char** argv, int argc)
             free(argv[i]);
     }
 
-    // 3. ZABICIE PROCESÓW POTOMNYCH (Wymaganie projektowe)
-    // kill(0, SIGTERM) wysyła sygnał do całej grupy procesów (czyli do rodzica i wszystkich dzieci)
-    // Ale musimy uważać, żeby rodzic nie zabił sam siebie zanim nie skończy funkcji.
-    // Dlatego w tym prostym modelu zakładamy, że dzieci mają swoje grupy lub po prostu:
-
-    /*
-    // Opcja bezpieczna: Czekamy na wszystkie dzieci (zombie cleanup)
-    while (waitpid(-1, NULL, WNOHANG) > 0);
-
-    // Opcja "atomowa" (zgodna z poleceniem "zakończyć pracę procesów"):
-    // Wysyłamy sygnał do wszystkich procesów w grupie, ignorując go u siebie na chwilę
-    signal(SIGTERM, SIG_IGN);
-    kill(0, SIGTERM);
-
-    // Czekamy aż dzieci umrą
-    while(wait(NULL) > 0);
-    */
-    printf(ANSI_BOLD ANSI_COLOR_YELLOW "END\n" ANSI_COLOR_RESET);
+    printf(ANSI_COLOR_YELLOW "\nPROGRAM ENDED\n" ANSI_COLOR_RESET);
 }
 
 void sethandler(void (*f)(int), int sigNo)
@@ -253,7 +296,7 @@ ssize_t bulk_read(int fd, char* buf, size_t count)
             return c;
 
         if (c == 0)
-            return len;  // EOF
+            return len;
 
         buf += c;
         len += c;
@@ -312,13 +355,12 @@ file* make_file_struct(char* name, char* path)
         }
         else
         {
-            fprintf(stderr, "\nunrecognizable file type\n");
             return NULL;
         }
     }
     else
     {
-        perror("lstat");
+        PERR("lstat");
     }
 
     return element;
@@ -336,13 +378,3 @@ void ignore_signals()
         sethandler(SIG_IGN, i);
     }
 }
-
-/*
-void* safe_malloc(size_t size) {
-    void *ptr = malloc(size);
-    if (!ptr) {
-        ERR("malloc");
-    }
-    return ptr;
-}
-*/

@@ -17,7 +17,7 @@ void end_action(struct BackupsMap* map, char* source, char* target)
         }
         kill(backup_to_end->pid, SIGTERM);
         waitpid(backup_to_end->pid, NULL, 0);
-        printf("ending backup of %s: '%s' pid=%d\n", source, target, backup_to_end->pid);
+        printf(ANSI_COLOR_YELLOW "\nBackup of '%s' in '%s' has ended.\n" ANSI_COLOR_RESET, source, target);
         remove_from_BackupMap(map, backup_to_end->pid);
         return;
     }

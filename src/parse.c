@@ -60,7 +60,7 @@ int parse(char* input, char** argv)
         argv[argc] = malloc(len + 1);
         if (argv[argc] == NULL)
         {
-            perror("malloc");
+            ERR("malloc");
             return 0;
         }
 

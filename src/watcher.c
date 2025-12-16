@@ -8,9 +8,8 @@ void add_to_map(struct WatchMap* map, int wd, const char* path)
         return;
     }
     map->watch_map[map->watch_count].wd = wd;
-    map->watch_map[map->watch_count].path = strdup(path);  // Must copy the path!
+    map->watch_map[map->watch_count].path = strdup(path);  
     map->watch_count++;
-    // printf("new watch: '%s' @wd=%d\n", path, wd);
 }
 
 struct Watch* find_watch(struct WatchMap* map, int wd)
@@ -31,7 +30,6 @@ void remove_from_map(struct WatchMap* map, int wd)
     {
         if (map->watch_map[i].wd == wd)
         {
-            // printf("removing watch: '%s' @wd=%d\n", map->watch_map[i].path, wd);
             free(map->watch_map[i].path);
             map->watch_map[i] = map->watch_map[map->watch_count - 1];
             map->watch_count--;
@@ -52,7 +50,7 @@ void add_watch_recursive(int notify_fd, struct WatchMap* map, char* watched_dir)
     int wd = inotify_add_watch(notify_fd, watched_dir, mask);
     if (wd < 0)
     {
-        perror("inotify_add_watch");
+        ERR("inotify_add_watch");
         return;
     }
     add_to_map(map, wd, watched_dir);
@@ -60,7 +58,7 @@ void add_watch_recursive(int notify_fd, struct WatchMap* map, char* watched_dir)
     DIR* dir = opendir(watched_dir);
     if (!dir)
     {
-        perror("opendir");
+        ERR("opendir");
         return;
     }
 
@@ -96,7 +94,6 @@ void update_watch_paths(struct WatchMap* map, const char* old_path, const char* 
             (map->watch_map[i].path[old_len] == '/' || map->watch_map[i].path[old_len] == '\0'))
         {
             char new_full_path[PATH_MAX];
-            // Sklej nową ścieżkę z resztą (sufiksem) starej ścieżki
             snprintf(new_full_path, sizeof(new_full_path), "%s%s", new_path, map->watch_map[i].path + old_len);
 
             free(map->watch_map[i].path);
@@ -105,12 +102,33 @@ void update_watch_paths(struct WatchMap* map, const char* old_path, const char* 
     }
 }
 
-void backuping(char* watched_dir, char* target)
+void clean_and_exit(struct WatchMap *map, int notify_fd, int exit_code)
+{
+    if (map != NULL) 
+    {
+        for (int i = 0; i < map->watch_count; i++) 
+        {
+            if (map->watch_map[i].path != NULL) {
+                free(map->watch_map[i].path);
+            }
+        }
+        map->watch_count = 0;
+    }
+
+    if (notify_fd >= 0) 
+    {
+        close(notify_fd);
+    }
+
+    exit(exit_code);
+}
+
+void backuping(char* watched_dir, char* target, int ld)
 {
     int notify_fd = inotify_init();
     if (notify_fd < 0)
     {
-        perror("inotify_init");
+        ERR("inotify_init");
         return;
     }
 
@@ -124,12 +142,16 @@ void backuping(char* watched_dir, char* target)
     while (watcher_map.watch_count > 0)
     {
         char buffer[EVENT_BUF_LEN];
+        errno = 0;
         ssize_t event_count = read(notify_fd, buffer, EVENT_BUF_LEN);
-
         if (event_count < 0)
         {
-            perror("read");
-            exit(EXIT_FAILURE);
+            if (errno == EINTR) 
+            {
+                clean_and_exit(&watcher_map, notify_fd, EXIT_SUCCESS);
+            }
+            PERR("read");
+            clean_and_exit(&watcher_map, notify_fd, EXIT_FAILURE);
         }
 
         ssize_t i = 0;
@@ -141,21 +163,17 @@ void backuping(char* watched_dir, char* target)
             struct Watch* watch = find_watch(&watcher_map, event->wd);
 
             char* event_path = NULL;
-            // char event_path[PATH_MAX] = "";
             if (watch && event->len > 0)
             {
                 event_path = join_path(watch->path, event->name);
             }
             else if (watch)
             {
-                // Event has no name, use the watch path (e.g., IN_DELETE_SELF)
-                // strncpy(event_path, watch->path, sizeof(event_path));
                 event_path = strdup(watch->path);
             }
 
             if (event->mask & IN_IGNORED)
             {
-                // Watch was removed by the kernel
                 remove_from_map(&watcher_map, event->wd);
             }
             else
@@ -164,10 +182,13 @@ void backuping(char* watched_dir, char* target)
                 {
                     if (event->mask & IN_CREATE)
                     {
-                        printf("\n'%s' was CREATED", event_path);
-                        fflush(stdout);
+                        log_print(ld, getpid(), event_path, "was CREATED", NULL);
                         add_watch_recursive(notify_fd, &watcher_map, event_path);
                         file* element = make_file_struct(event->name, event_path);
+                        if (element == NULL)
+                        {
+                            continue;
+                        }
                         size_t root_len = strlen(watched_dir);
                         char* relative_dir = watch->path + root_len;
                         char* full_target_path = join_path(target, relative_dir);
@@ -179,14 +200,17 @@ void backuping(char* watched_dir, char* target)
                     }
                     if (event->mask & IN_MOVED_TO)
                     {
-                        printf("\n'%s' was MOVED TO (cookie=%u)", event_path, event->cookie);
-                        fflush(stdout);
+                        log_print(ld, getpid(), event_path, "was MOVED TO", NULL);
 
                         if (event->cookie == pending_cookie && pending_cookie != 0)  // ZMIENIONA NAZWA
                         {
                             update_watch_paths(&watcher_map, pending_move_path, event_path);
 
                             file* element = make_file_struct(event->name, event_path);
+                            if (element == NULL)
+                            {
+                                continue;
+                            }
                             size_t root_len = strlen(watched_dir);
                             char* relative_dir = watch->path + root_len;
                             char* full_target_path = join_path(target, relative_dir);
@@ -203,6 +227,10 @@ void backuping(char* watched_dir, char* target)
                         {
                             add_watch_recursive(notify_fd, &watcher_map, event_path);
                             file* element = make_file_struct(event->name, event_path);
+                            if (element == NULL)
+                            {
+                                continue;
+                            }
                             size_t root_len = strlen(watched_dir);
                             char* relative_dir = watch->path + root_len;
                             char* full_target_path = join_path(target, relative_dir);
@@ -215,8 +243,7 @@ void backuping(char* watched_dir, char* target)
                     }
                     if (event->mask & IN_MOVED_FROM)
                     {
-                        printf("\n'%s' was MOVED FROM (cookie=%u)", event_path, event->cookie);
-                        fflush(stdout);
+                        log_print(ld, getpid(), event_path, "was MOVED FROM", NULL);
                         pending_cookie = event->cookie;
                         strncpy(pending_move_path, event_path, sizeof(pending_move_path));
 
@@ -224,16 +251,18 @@ void backuping(char* watched_dir, char* target)
                     }
                     if (event->mask & IN_DELETE)
                     {
-                        printf("\n'%s' was DELETED", event_path);
-                        fflush(stdout);
+                        log_print(ld, getpid(), event_path, "was DELETED", NULL);
                         delete_dir(watched_dir, target, event_path);
                     }
                 }
                 else if (event->mask & IN_CREATE && !(event->mask & IN_ISDIR))
                 {
-                    printf("\n'%s' was CREATED", event_path);
-                    fflush(stdout);
+                    log_print(ld, getpid(), event_path, "was CREATED", NULL);
                     file* element = make_file_struct(event->name, event_path);
+                    if (element == NULL)
+                    {
+                        continue;
+                    }
                     size_t root_len = strlen(watched_dir);
                     char* relative_dir = watch->path + root_len;
                     char* full_target_path = join_path(target, relative_dir);
@@ -253,9 +282,12 @@ void backuping(char* watched_dir, char* target)
                 }
                 else if (event->mask & IN_MOVED_TO && !(event->mask & IN_ISDIR))
                 {
-                    printf("\n'%s' was MOVED TO", event_path);
-                    fflush(stdout);
+                    log_print(ld, getpid(), event_path, "was MOVED TO", NULL);
                     file* element = make_file_struct(event->name, event_path);
+                    if (element == NULL)
+                    {
+                        continue;
+                    }
                     size_t root_len = strlen(watched_dir);
                     char* relative_dir = watch->path + root_len;
                     char* full_target_path = join_path(target, relative_dir);
@@ -275,16 +307,18 @@ void backuping(char* watched_dir, char* target)
                 }
                 else if (event->mask & IN_MOVED_FROM && !(event->mask & IN_ISDIR))
                 {
-                    printf("\n'%s' was MOVED FROM", event_path);
-                    fflush(stdout);
+                    log_print(ld, getpid(), event_path, "was MOVED FROM", NULL);
                     delete_file(watched_dir, target, event_path);
                 }
                 else if (event->mask & IN_CLOSE_WRITE && !(event->mask & IN_ISDIR))
                 {
-                    printf("\n'%s' was MODIFIED", event_path);
-                    fflush(stdout);
+                    log_print(ld, getpid(), event_path, "was MODIFIED", NULL);
                     delete_file(watched_dir, target, event_path);
                     file* element = make_file_struct(event->name, event_path);
+                    if (element == NULL)
+                    {
+                        continue;
+                    }
                     size_t root_len = strlen(watched_dir);
                     char* relative_dir = watch->path + root_len;
                     char* full_target_path = join_path(target, relative_dir);
@@ -304,8 +338,7 @@ void backuping(char* watched_dir, char* target)
                 }
                 else if (event->mask & IN_DELETE && !(event->mask & IN_ISDIR))
                 {
-                    printf("\n'%s' was DELETED", event_path);
-                    fflush(stdout);
+                    log_print(ld, getpid(), event_path, "was DELTED", NULL);
                     delete_file(watched_dir, target, event_path);
                 }
             }
@@ -315,6 +348,5 @@ void backuping(char* watched_dir, char* target)
         }
     }
 
-    close(notify_fd);
-    return;
+    clean_and_exit(&watcher_map, notify_fd, EXIT_SUCCESS);
 }
