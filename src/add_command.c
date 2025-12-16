@@ -2,7 +2,6 @@
 
 void add_action(char* source, char* target, int ld)
 {
-    
     file** content = scan_dir(source);
 
     copy(source, target, source, target, content);  // kopiuje elementy do katalogu docelowego

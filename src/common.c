@@ -10,24 +10,25 @@ void usage(char* pname, char* args)
 
 void log_print(int ld, int pid, char* first, char* second, char* third)
 {
-    if (ld < 0) return;
+    if (ld < 0)
+        return;
 
-    char buf[MAX_BUF]; 
+    char buf[MAX_BUF];
     int len = 0;
 
     len += snprintf(buf + len, MAX_BUF - len, "[PID: %d]", pid);
 
-    if (first != NULL) 
+    if (first != NULL)
     {
         len += snprintf(buf + len, MAX_BUF - len, " %s", first);
     }
 
-    if (second != NULL) 
+    if (second != NULL)
     {
         len += snprintf(buf + len, MAX_BUF - len, " %s", second);
     }
 
-    if (third != NULL) 
+    if (third != NULL)
     {
         len += snprintf(buf + len, MAX_BUF - len, " %s", third);
     }
@@ -78,7 +79,7 @@ struct backup* find_backup(struct BackupsMap* map, char* target)
     {
         if (strcmp(map->backup_map[i].target, target) == 0)
         {
-            return &map->backup_map[i];
+            return &(map->backup_map[i]);
         }
     }
     return NULL;
@@ -246,7 +247,7 @@ void cleanup(char* input, char** argv, int argc, struct BackupsMap* map)
 
         map->backup_count = 0;
     }
-    
+
     if (input != NULL)
     {
         free(input);
@@ -340,7 +341,7 @@ file* make_file_struct(char* name, char* path)
     {
         element->name = strdup(name);
         element->real_path = strdup(path);
-        element->perms = file_info.st_mode & 0777;
+        element->perms = file_info.st_mode & 07777;
         if (S_ISREG(file_info.st_mode))
         {
             element->type = FILE_TYPE;
@@ -370,7 +371,7 @@ void ignore_signals()
 {
     for (int i = 1; i < NSIG; i++)
     {
-        if (i == SIGINT || i == SIGTERM || i == SIGKILL || i == SIGSTOP)
+        if (i == SIGINT || i == SIGTERM || i == SIGKILL || i == SIGSTOP || i == SIGCHLD)
         {
             continue;
         }

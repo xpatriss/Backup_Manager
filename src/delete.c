@@ -60,12 +60,6 @@ int recursive_clean(char* path)
 
     closedir(d);
 
-    if (rmdir(path) != 0)
-    {
-        PERR("rmdir");
-        return -1;
-    }
-
     return 0;
 }
 
@@ -80,6 +74,12 @@ void delete_dir(char* source, char* target, char* dirpath)
     char* target_path = join_path(target, newpath);
 
     recursive_clean(target_path);
+
+    if (rmdir(target_path) != 0)
+    {
+        PERR("rmdir");
+        return;
+    }
 
     free(target_path);
 }

@@ -8,7 +8,7 @@ void add_to_map(struct WatchMap* map, int wd, const char* path)
         return;
     }
     map->watch_map[map->watch_count].wd = wd;
-    map->watch_map[map->watch_count].path = strdup(path);  
+    map->watch_map[map->watch_count].path = strdup(path);
     map->watch_count++;
 }
 
@@ -40,12 +40,7 @@ void remove_from_map(struct WatchMap* map, int wd)
 
 void add_watch_recursive(int notify_fd, struct WatchMap* map, char* watched_dir)
 {
-    uint32_t mask = IN_CREATE |       // Utworzono nowy plik/katalog
-                    IN_DELETE |       // Usunięto plik/katalog
-                    IN_MOVED_FROM |   // Zmieniono nazwę (stara nazwa)
-                    IN_MOVED_TO |     // Zmieniono nazwę (nowa nazwa)
-                    IN_CLOSE_WRITE |  // Zakończono edycję pliku (zamiast IN_MODIFY)
-                    IN_ATTRIB;        // Zmieniono uprawnienia (chmod)
+    uint32_t mask = IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO | IN_CLOSE_WRITE | IN_ATTRIB;
 
     int wd = inotify_add_watch(notify_fd, watched_dir, mask);
     if (wd < 0)
@@ -102,20 +97,21 @@ void update_watch_paths(struct WatchMap* map, const char* old_path, const char* 
     }
 }
 
-void clean_and_exit(struct WatchMap *map, int notify_fd, int exit_code)
+void clean_and_exit(struct WatchMap* map, int notify_fd, int exit_code)
 {
-    if (map != NULL) 
+    if (map != NULL)
     {
-        for (int i = 0; i < map->watch_count; i++) 
+        for (int i = 0; i < map->watch_count; i++)
         {
-            if (map->watch_map[i].path != NULL) {
+            if (map->watch_map[i].path != NULL)
+            {
                 free(map->watch_map[i].path);
             }
         }
         map->watch_count = 0;
     }
 
-    if (notify_fd >= 0) 
+    if (notify_fd >= 0)
     {
         close(notify_fd);
     }
@@ -146,7 +142,7 @@ void backuping(char* watched_dir, char* target, int ld)
         ssize_t event_count = read(notify_fd, buffer, EVENT_BUF_LEN);
         if (event_count < 0)
         {
-            if (errno == EINTR) 
+            if (errno == EINTR)
             {
                 clean_and_exit(&watcher_map, notify_fd, EXIT_SUCCESS);
             }
@@ -254,6 +250,31 @@ void backuping(char* watched_dir, char* target, int ld)
                         log_print(ld, getpid(), event_path, "was DELETED", NULL);
                         delete_dir(watched_dir, target, event_path);
                     }
+                    if (event->mask & IN_ATTRIB)
+                    {
+                        log_print(ld, getpid(), event_path, "CHANGED ATTRIBUTES", NULL);
+                        file* element = make_file_struct(event->name, event_path);
+                        if (element == NULL)
+                        {
+                            continue;
+                        }
+
+                        size_t root_len = strlen(watched_dir);
+                        char* relative_dir = watch->path + root_len;
+                        char* full_target_path = join_path(target, relative_dir);
+
+                        if (element->type == DIRECTORY_TYPE)
+                        {
+                            if (chmod(full_target_path, element->perms & 07777) == -1)
+                            {
+                                PERR("chmod");
+                            }
+                        }
+                        free(full_target_path);
+                        free(element->name);
+                        free(element->real_path);
+                        free(element);
+                    }
                 }
                 else if (event->mask & IN_CREATE && !(event->mask & IN_ISDIR))
                 {
@@ -340,6 +361,31 @@ void backuping(char* watched_dir, char* target, int ld)
                 {
                     log_print(ld, getpid(), event_path, "was DELTED", NULL);
                     delete_file(watched_dir, target, event_path);
+                }
+                else if (event->mask & IN_ATTRIB && !(event->mask & IN_ISDIR))
+                {
+                    log_print(ld, getpid(), event_path, "CHANGED ATTRIBUTES", NULL);
+                    file* element = make_file_struct(event->name, event_path);
+                    if (element == NULL)
+                    {
+                        continue;
+                    }
+
+                    size_t root_len = strlen(watched_dir);
+                    char* relative_dir = watch->path + root_len;
+                    char* full_target_path = join_path(target, relative_dir);
+
+                    if (element->type == FILE_TYPE)
+                    {
+                        if (chmod(full_target_path, element->perms & 07777) == -1)
+                        {
+                            PERR("chmod");
+                        }
+                    }
+                    free(full_target_path);
+                    free(element->name);
+                    free(element->real_path);
+                    free(element);
                 }
             }
 

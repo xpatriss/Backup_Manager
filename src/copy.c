@@ -14,9 +14,18 @@ void copy_file(char* target, file* f)
         free(target_path);
         return;
     }
-    if ((fd2 = TEMP_FAILURE_RETRY(open(target_path, O_WRONLY | O_CREAT | O_APPEND | O_TRUNC, f->perms))) < 0)
+    if ((fd2 = TEMP_FAILURE_RETRY(open(target_path, O_WRONLY | O_CREAT | O_TRUNC, 0600))) < 0)
     {
         PERR("open");
+        close(fd1);
+        free(source_path);
+        free(target_path);
+        return;
+    }
+    if (fchmod(fd2, f->perms) == -1)
+    {
+        PERR("fchmod");
+        close(fd2);
         free(source_path);
         free(target_path);
         return;
@@ -56,7 +65,7 @@ void copy_file(char* target, file* f)
 
 void copy_symlink(char* s_root, char* t_root, char* source, char* target, file* s)
 {
-    char link_content[MAX_PATH];
+    char link_content[PATH_MAX];
     ssize_t len;
 
     len = readlink(s->real_path, link_content, sizeof(link_content) - 1);
@@ -101,12 +110,22 @@ void copy_directory(char* s_root, char* t_root, char* target, file* d)
 
     char* new_dir = join_path(target, d->name);
 
-    if (mkdir(new_dir, 0777))
+    if (mkdir(new_dir, 0700))
     {
-        PERR("mkdir");
-        free(dir_content);
+        if (errno != EEXIST)
+        {
+            PERR("mkdir");
+        }
+        free_file_pointer_tab(dir_content);
         free(new_dir);
         return;
+    }
+
+    if (chmod(new_dir, d->perms) == -1)
+    {
+        PERR("chmod");
+        free_file_pointer_tab(dir_content);
+        free(new_dir);
     }
 
     if (dir_content == NULL)

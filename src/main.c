@@ -3,18 +3,16 @@
 #include "end_command.h"
 #include "list_command.h"
 #include "parse.h"
+#include "restore.h"
 
 volatile sig_atomic_t app_running = 1;
+volatile sig_atomic_t backup_crashed = 0;
 
-void handle_exit_signal(int sig)
-{
-    app_running = 0;
-}
+void handle_exit_signal(int sig) { app_running = 0; }
 
-void exit_function(struct BackupsMap* map)
-{
-    app_running = 0;
-}
+void handle_backup_crashed(int sig) { backup_crashed = 1; }
+
+void exit_function(struct BackupsMap* map) { app_running = 0; }
 
 int making_realpaths(int instr_argc, char** instr_argv)
 {
@@ -171,6 +169,8 @@ void get_instruction(int instr_argc, char** instr_argv, struct BackupsMap* map, 
             usage(instr_argv[0], "<source path> <target path>");
             return;
         }
+
+        restore_function(instr_argv[1], instr_argv[2], map);
     }
     else if ((strcmp(instr_argv[0], "exit") == 0))
     {
@@ -197,6 +197,35 @@ void get_instruction(int instr_argc, char** instr_argv, struct BackupsMap* map, 
         fprintf(stderr, ANSI_COLOR_RED "\nUnrecognizable instruction!\n" ANSI_COLOR_RESET);
         return;
     }
+}
+
+void detect_crashed_backups(struct BackupsMap* map)
+{
+    int status;
+    pid_t pid;
+
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+    {
+        struct backup* b = NULL;
+        for (int i = 0; i < map->backup_count; i++)
+        {
+            if (map->backup_map[i].pid == pid)
+            {
+                b = &map->backup_map[i];
+                break;
+            }
+        }
+
+        if (b != NULL)
+        {
+            fprintf(stderr, ANSI_COLOR_RED "\nBackup process %d failed! Removed from list.\n " ANSI_COLOR_RESET, pid);
+
+            remove_from_BackupMap(map, pid);
+            fflush(stderr);
+        }
+    }
+    backup_crashed = 0;
+    return;
 }
 
 void hello()
@@ -235,6 +264,7 @@ int main(int argc, char** argv)
     ignore_signals();
     sethandler(handle_exit_signal, SIGINT);
     sethandler(handle_exit_signal, SIGTERM);
+    sethandler(handle_backup_crashed, SIGCHLD);
 
     hello();
 
@@ -247,11 +277,24 @@ int main(int argc, char** argv)
 
     while (app_running)
     {
+        if (backup_crashed == 1)
+        {
+            detect_crashed_backups(&map);
+            backup_crashed = 0;
+        }
         printf(ANSI_BOLD "\nWrite a command and press ENTER\n> " ANSI_COLOR_RESET);
+        errno = 0;
         if (getline(&input, &len, stdin) == -1)
         {
             if (errno == EINTR)
+            {
+                if (backup_crashed == 1)
+                {
+                    detect_crashed_backups(&map);
+                }
+                clearerr(stdin);
                 continue;
+            }
             break;
         }
 
@@ -277,7 +320,7 @@ int main(int argc, char** argv)
     }
 
     cleanup(input, instr_argv, instr_argc, &map);
-    
+
     if (TEMP_FAILURE_RETRY(close(ld)))
     {
         ERR("close");
