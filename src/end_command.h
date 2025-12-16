@@ -3,6 +3,6 @@
 
 #include "common.h"
 
-void end_action(struct BackupsMap* map, char* source, char* target);
+void end_action(struct BackupsMap *map, char *source, char *target);
 
 #endif

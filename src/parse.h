@@ -2,6 +2,6 @@
 #define PARSE_H
 
 #include "common.h"
-int parse(char* input, char** argv);
+int parse(char *input, char **argv);
 
 #endif

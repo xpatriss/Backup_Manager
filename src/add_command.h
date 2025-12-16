@@ -5,6 +5,6 @@
 #include "copy.h"
 #include "watcher.h"
 
-void add_action(char* source, char* target, int ld);
+void add_action(char *source, char *target, int ld);
 
 #endif

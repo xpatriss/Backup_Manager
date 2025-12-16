@@ -3,6 +3,6 @@
 
 #include "common.h"
 
-void list_action(struct BackupsMap* map);
+void list_action(struct BackupsMap *map);
 
 #endif
