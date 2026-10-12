@@ -95,29 +95,27 @@ void copy_symlink(char *s_root, char *t_root, char *source, char *target,
 
 void copy_directory(char *s_root, char *t_root, char *target, file *d) {
   file **dir_content = scan_dir(d->real_path);
-
   char *new_dir = join_path(target, d->name);
 
-  if (mkdir(new_dir, 0700)) {
+  if (mkdir(new_dir, 0700) != 0) {
     if (errno != EEXIST) {
       PERR("mkdir");
+      free_file_pointer_tab(dir_content);
+      free(new_dir);
+      return;
     }
-    free_file_pointer_tab(dir_content);
-    free(new_dir);
-    return;
   }
 
   if (chmod(new_dir, d->perms) == -1) {
     PERR("chmod");
-    free_file_pointer_tab(dir_content);
-    free(new_dir);
   }
 
-  if (dir_content == NULL)
+  if (dir_content == NULL) {
+    free(new_dir);
     return;
+  }
 
   int i = 0;
-
   while (dir_content[i] != NULL) {
     switch (dir_content[i]->type) {
     case (FILE_TYPE):
@@ -130,7 +128,7 @@ void copy_directory(char *s_root, char *t_root, char *target, file *d) {
       copy_symlink(s_root, t_root, d->real_path, new_dir, dir_content[i]);
       break;
     default:
-      continue;
+      break;
     }
     i++;
   }

@@ -1,4 +1,9 @@
+# Kompilacja
 *.o
-*:Zone.Identifier
-sop-backup
-Makefile
+backup_app
+
+# Pliki tymczasowe i logi
+actions.log
+*.txt
+.vscode/
+.idea/

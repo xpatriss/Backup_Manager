@@ -64,6 +64,7 @@ void delete_dir(char *source, char *target, char *dirpath) {
 
   if (rmdir(target_path) != 0) {
     PERR("rmdir");
+    free(target_path);
     return;
   }
 

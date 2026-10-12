@@ -44,7 +44,7 @@ void add_watch_recursive(int notify_fd, struct WatchMap *map,
 
   DIR *dir = opendir(watched_dir);
   if (!dir) {
-    ERR("opendir");
+    PERR("opendir");
     return;
   }
 
@@ -145,12 +145,20 @@ void backuping(char *watched_dir, char *target, int ld) {
       if (event->mask & IN_IGNORED) {
         remove_from_map(&watcher_map, event->wd);
       } else {
+        if (access(target, F_OK) != 0) {
+          log_print(ld, getpid(), target,
+                    "Target directory was removed. Exiting.", NULL);
+          free(event_path);
+          clean_and_exit(&watcher_map, notify_fd, EXIT_FAILURE);
+        }
         if (event->mask & IN_ISDIR) {
           if (event->mask & IN_CREATE) {
             log_print(ld, getpid(), event_path, "was CREATED", NULL);
             add_watch_recursive(notify_fd, &watcher_map, event_path);
             file *element = make_file_struct(event->name, event_path);
             if (element == NULL) {
+              free(event_path);
+              i += sizeof(struct inotify_event) + event->len;
               continue;
             }
             size_t root_len = strlen(watched_dir);
@@ -172,6 +180,8 @@ void backuping(char *watched_dir, char *target, int ld) {
 
               file *element = make_file_struct(event->name, event_path);
               if (element == NULL) {
+                free(event_path);
+                i += sizeof(struct inotify_event) + event->len;
                 continue;
               }
               size_t root_len = strlen(watched_dir);
@@ -190,6 +200,8 @@ void backuping(char *watched_dir, char *target, int ld) {
               add_watch_recursive(notify_fd, &watcher_map, event_path);
               file *element = make_file_struct(event->name, event_path);
               if (element == NULL) {
+                free(event_path);
+                i += sizeof(struct inotify_event) + event->len;
                 continue;
               }
               size_t root_len = strlen(watched_dir);
@@ -217,6 +229,8 @@ void backuping(char *watched_dir, char *target, int ld) {
             log_print(ld, getpid(), event_path, "CHANGED ATTRIBUTES", NULL);
             file *element = make_file_struct(event->name, event_path);
             if (element == NULL) {
+              free(event_path);
+              i += sizeof(struct inotify_event) + event->len;
               continue;
             }
 
@@ -225,7 +239,7 @@ void backuping(char *watched_dir, char *target, int ld) {
             char *full_target_path = join_path(target, relative_dir);
 
             if (element->type == DIRECTORY_TYPE) {
-              if (chmod(full_target_path, element->perms & 07777) == -1) {
+              if (chmod(full_target_path, element->perms & 0777) == -1) {
                 PERR("chmod");
               }
             }
@@ -238,6 +252,8 @@ void backuping(char *watched_dir, char *target, int ld) {
           log_print(ld, getpid(), event_path, "was CREATED", NULL);
           file *element = make_file_struct(event->name, event_path);
           if (element == NULL) {
+            free(event_path);
+            i += sizeof(struct inotify_event) + event->len;
             continue;
           }
           size_t root_len = strlen(watched_dir);
@@ -258,6 +274,8 @@ void backuping(char *watched_dir, char *target, int ld) {
           log_print(ld, getpid(), event_path, "was MOVED TO", NULL);
           file *element = make_file_struct(event->name, event_path);
           if (element == NULL) {
+            free(event_path);
+            i += sizeof(struct inotify_event) + event->len;
             continue;
           }
           size_t root_len = strlen(watched_dir);
@@ -282,6 +300,8 @@ void backuping(char *watched_dir, char *target, int ld) {
           delete_file(watched_dir, target, event_path);
           file *element = make_file_struct(event->name, event_path);
           if (element == NULL) {
+            free(event_path);
+            i += sizeof(struct inotify_event) + event->len;
             continue;
           }
           size_t root_len = strlen(watched_dir);
@@ -299,12 +319,14 @@ void backuping(char *watched_dir, char *target, int ld) {
           free(element->real_path);
           free(element);
         } else if (event->mask & IN_DELETE && !(event->mask & IN_ISDIR)) {
-          log_print(ld, getpid(), event_path, "was DELTED", NULL);
+          log_print(ld, getpid(), event_path, "was DELETED", NULL);
           delete_file(watched_dir, target, event_path);
         } else if (event->mask & IN_ATTRIB && !(event->mask & IN_ISDIR)) {
           log_print(ld, getpid(), event_path, "CHANGED ATTRIBUTES", NULL);
           file *element = make_file_struct(event->name, event_path);
           if (element == NULL) {
+            free(event_path);
+            i += sizeof(struct inotify_event) + event->len;
             continue;
           }
 
@@ -313,7 +335,7 @@ void backuping(char *watched_dir, char *target, int ld) {
           char *full_target_path = join_path(target, relative_dir);
 
           if (element->type == FILE_TYPE) {
-            if (chmod(full_target_path, element->perms & 07777) == -1) {
+            if (chmod(full_target_path, element->perms & 0777) == -1) {
               PERR("chmod");
             }
           }

@@ -20,11 +20,9 @@ int making_realpaths(int instr_argc, char **instr_argv) {
   if ((source == NULL) && (errno == ENOENT)) {
     fprintf(stderr, ANSI_COLOR_RED
             "\nThe source directory doesn't exist!\n" ANSI_COLOR_RESET);
-    free(source);
     return -1;
   } else if (source == NULL) {
     PERR("realpath");
-    free(source);
     return -1;
   }
 
@@ -32,24 +30,44 @@ int making_realpaths(int instr_argc, char **instr_argv) {
   for (int i = 0; i < (instr_argc - 2); i++) {
     errno = 0;
     targets[i] = realpath(instr_argv[i + 2], NULL);
+
     if ((targets[i] == NULL) && (errno == ENOENT)) {
-      if (mkdir(instr_argv[i + 2], 0777)) {
-        PERR("mkdir");
-        for (int j = 0; j < (instr_argc - 2); j++) {
-          if (targets[j] != NULL) {
-            free(targets[j]);
+      if (strcmp(instr_argv[0], "add") == 0) {
+        // dla "add": tworzymy katalog docelowy i pobieramy jego pelna sciezke
+        if (mkdir(instr_argv[i + 2], 0777)) {
+          PERR("mkdir");
+          for (int j = 0; j < i; j++) {
+            if (targets[j] != NULL)
+              free(targets[j]);
           }
+          free(source);
+          return -1;
         }
+        targets[i] = realpath(instr_argv[i + 2], NULL);
+      } else if (strcmp(instr_argv[0], "end") == 0) {
+        // dla "end": jesli katalog zniknal z dysku, przekazujemy nazwe,
+        // zeby end_action moglo znalezc ten cel w mapie i zamknac proces
+        targets[i] = strdup(instr_argv[i + 2]);
+      } else {
+        // dla "restore": katalog docelowy (backup) MUSI fizycznie istniec
+        fprintf(stderr,
+                ANSI_COLOR_RED
+                "\nTarget directory '%s' doesn't exist!\n" ANSI_COLOR_RESET,
+                instr_argv[i + 2]);
+        for (int j = 0; j < i; j++) {
+          if (targets[j] != NULL)
+            free(targets[j]);
+        }
+        free(source);
         return -1;
       }
-      targets[i] = realpath(instr_argv[i + 2], NULL);
     } else if (targets[i] == NULL) {
       PERR("realpath");
-      for (int j = 0; j < (instr_argc - 2); j++) {
-        if (targets[j] != NULL) {
+      for (int j = 0; j < i; j++) {
+        if (targets[j] != NULL)
           free(targets[j]);
-        }
       }
+      free(source);
       return -1;
     }
   }
@@ -198,11 +216,11 @@ void hello() {
   printf("\n");
   printf(ANSI_BOLD ANSI_COLOR_MAGENTA
          "add" ANSI_COLOR_RESET " <source> <target>       - starts making a "
-                                "copy of source in target (you can "
+         "copy of source in target (you can "
          "add many target paths divided by spaces)\n");
   printf(ANSI_BOLD ANSI_COLOR_MAGENTA
          "end" ANSI_COLOR_RESET " <source> <target>       - breaks making a "
-                                "copy of source in target (you can "
+         "copy of source in target (you can "
          "add many target paths divided by spaces)\n");
   printf(ANSI_BOLD ANSI_COLOR_MAGENTA
          "restore" ANSI_COLOR_RESET

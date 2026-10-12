@@ -82,7 +82,12 @@ void remove_from_BackupMap(struct BackupsMap *map, int pid) {
     if (map->backup_map[i].pid == pid) {
       free(map->backup_map[i].source);
       free(map->backup_map[i].target);
-      map->backup_map[i] = map->backup_map[map->backup_count - 1];
+      if (i != map->backup_count - 1) {
+        map->backup_map[i] = map->backup_map[map->backup_count - 1];
+      }
+      map->backup_map[map->backup_count - 1].source = NULL;
+      map->backup_map[map->backup_count - 1].target = NULL;
+      map->backup_map[map->backup_count - 1].pid = 0;
       map->backup_count--;
       return;
     }
@@ -102,73 +107,90 @@ file **scan_dir(char *path) {
     return NULL;
   }
 
-  do {
+  while (1) {
     errno = 0;
-    if ((dp = readdir(dirp)) != NULL) {
-      if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
-        continue;
-
-      char *full_path = join_path(path, dp->d_name);
-
-      if (lstat(full_path, &filestat)) {
-        free(full_path);
-        PERR("lstat");
+    dp = readdir(dirp);
+    if (dp == NULL) {
+      if (errno != 0) {
+        PERR("readdir");
+        closedir(dirp);
+        if (tab != NULL) {
+          tab[content_count] = NULL;
+          free_file_pointer_tab(tab);
+        }
         return NULL;
       }
-
-      if (!S_ISDIR(filestat.st_mode) && !S_ISREG(filestat.st_mode) &&
-          !S_ISLNK(filestat.st_mode)) {
-        continue;
-      }
-
-      ssize_t new_size = (content_count + 2) * sizeof(file *);
-      file **temp = realloc(tab, new_size);
-
-      if (temp == NULL) {
-        free(full_path);
-        ERR("realloc");
-      }
-
-      tab = temp;
-
-      tab[content_count] = malloc(sizeof(file));
-      tab[content_count]->name = strdup(dp->d_name);
-      tab[content_count]->real_path = strdup(full_path);
-      tab[content_count]->perms = filestat.st_mode & 0777;
-
-      if (S_ISDIR(filestat.st_mode)) {
-        tab[content_count]->type = DIRECTORY_TYPE;
-      } else if (S_ISREG(filestat.st_mode)) {
-        tab[content_count]->type = FILE_TYPE;
-      } else if (S_ISLNK(filestat.st_mode)) {
-        tab[content_count]->type = SYMLINK_TYPE;
-      }
-
-      content_count++;
-      free(full_path);
+      break;
     }
 
-  } while (dp != NULL);
+    if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
+      continue;
 
-  if (errno != 0) {
-    PERR("readdir");
-    return NULL;
-  }
+    char *full_path = join_path(path, dp->d_name);
 
-  if (closedir(dirp)) {
-    PERR("closedir");
-    return NULL;
-  }
+    if (lstat(full_path, &filestat) != 0) {
+      PERR("lstat");
+      free(full_path);
+      closedir(dirp);
+      if (tab != NULL) {
+        tab[content_count] = NULL;
+        free_file_pointer_tab(tab);
+      }
+      return NULL;
+    }
 
-  if (content_count == 0) {
-    ssize_t new_size = (content_count + 1) * sizeof(file *);
-    file **temp = realloc(tab, new_size);
+    if (!S_ISDIR(filestat.st_mode) && !S_ISREG(filestat.st_mode) &&
+        !S_ISLNK(filestat.st_mode)) {
+      free(full_path);
+      continue;
+    }
 
+    file **temp = realloc(tab, (content_count + 2) * sizeof(file *));
     if (temp == NULL) {
+      free(full_path);
+      closedir(dirp);
+      if (tab != NULL) {
+        tab[content_count] = NULL;
+        free_file_pointer_tab(tab);
+      }
       ERR("realloc");
     }
-
     tab = temp;
+
+    tab[content_count] = malloc(sizeof(file));
+    if (tab[content_count] == NULL) {
+      free(full_path);
+      closedir(dirp);
+      tab[content_count] = NULL;
+      free_file_pointer_tab(tab);
+      ERR("malloc");
+    }
+
+    tab[content_count]->name = strdup(dp->d_name);
+    tab[content_count]->real_path = strdup(full_path);
+    tab[content_count]->perms = filestat.st_mode & 0777;
+
+    if (S_ISDIR(filestat.st_mode)) {
+      tab[content_count]->type = DIRECTORY_TYPE;
+    } else if (S_ISREG(filestat.st_mode)) {
+      tab[content_count]->type = FILE_TYPE;
+    } else if (S_ISLNK(filestat.st_mode)) {
+      tab[content_count]->type = SYMLINK_TYPE;
+    }
+
+    content_count++;
+    free(full_path);
+  }
+
+  if (closedir(dirp) != 0) {
+    PERR("closedir");
+  }
+
+  if (tab == NULL) {
+    tab = malloc(sizeof(file *));
+    if (tab == NULL) {
+      ERR("malloc");
+    }
   }
   tab[content_count] = NULL;
 
@@ -196,9 +218,8 @@ void cleanup(char *input, char **argv, int argc, struct BackupsMap *map) {
   if (map->backup_count != 0) {
     for (int i = 0; i < map->backup_count; i++) {
       pid_t pid = map->backup_map[i].pid;
-
       if (pid > 0) {
-        kill(pid, SIGKILL);
+        kill(pid, SIGTERM);
       }
     }
 
